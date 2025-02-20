@@ -1,23 +1,25 @@
 import torch
 from dgl import DGLGraph
 from torch import nn
+from model.decoder import ConvTransE
 
 
 class MMKGModel(nn.Module):
-    def __init__(self, num_ent, num_rel, h_dim):
+    def __init__(self, num_ent, num_rel, emb_dim):
         super().__init__()
         self.num_ent = num_ent
         self.num_rel = num_rel
-        self.entity_emb = nn.Parameter(torch.tensor((num_ent, h_dim), dtype=torch.float), requires_grad=True)
-        self.rel_emb = nn.Parameter(torch.tensor((num_rel * 2, h_dim), dtype=torch.float), requires_grad=True)
+        self.ent_emb = nn.Parameter(torch.tensor((num_ent, emb_dim), dtype=torch.float), requires_grad=True)
+        self.rel_emb = nn.Parameter(torch.tensor((num_rel * 2, emb_dim), dtype=torch.float), requires_grad=True)
         self.encoder = None
-        self.decoder = None
+        self.decoder = ConvTransE(emb_dim, in_channels=2, out_channels=50, kernel_size=3)
         self.loss_e = nn.CrossEntropyLoss()
         self.loss_r = nn.CrossEntropyLoss()
 
     #   排序后的(预测实体, 预测实体得分)
-    def forward(self, g_list: DGLGraph = None, triplet_list=None):
-        pass
+    def forward(self, triple_list=None, g_list: DGLGraph = None):
+        x = self.decoder.forward(self.ent_emb, self.rel_emb, triple_list)  # [!!!important] [batch_size, num_entity]
+        return x
 
     """
         get_loss:
@@ -26,18 +28,17 @@ class MMKGModel(nn.Module):
 
     def get_loss(self, origin_triplets):
         loss_ent = torch.zeros(1).cuda().to(self.device)  # gpu单卡训练
-        loss_rel = torch.zeros(1).cuda().to(self.device)  # gpu单卡训练
+        # loss_rel = torch.zeros(1).cuda().to(self.device)  # gpu单卡训练
         inverse_triplets = origin_triplets[:, [2, 1, 0]]
         inverse_triplets[:, 1] += self.num_rel
         triplets = torch.cat((origin_triplets, inverse_triplets))
         score_ent = self.forward(triplet_list=triplets)
-        score_rel = self.forward(triplet_list=triplets)
         if self.entity_prediction:
             loss_ent += self.loss_e(score_ent, triplets[:, 2])
-        if self.relation_prediction:
-            loss_rel += self.loss_r(score_rel, triplets[:, 1])
+        # if self.relation_prediction:
+        #     loss_rel += self.loss_r(score_rel, triplets[:, 1])
         # self.loss_r()
-        return
+        return loss_ent
 
     """
         predict:
@@ -50,8 +51,9 @@ class MMKGModel(nn.Module):
             inverse_triplets = origin_triplets[:, [2, 1, 0]]
             inverse_triplets[:, 1] += self.num_rel
             triplets = torch.cat((origin_triplets, inverse_triplets))
-            score_ent, score_rel = self.forward(triplet_list=triplets)
-            return triplets, score_ent, score_rel
+            score_ent = self.forward(triplet_list=triplets)
+
+            return triplets, score_ent
 
     """
         get_metrics: mrr, filter_mrr, rank, filter_rank
