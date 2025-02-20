@@ -58,8 +58,12 @@ class MMKGModel(nn.Module):
     """
 
     def get_metrics(self, test_triplets, eval_batch_size=1000, hits=(1, 3, 10)):
-        raw_rank = []
-        filter_rank = []
+        raw_ent_rank = []
+        filter_ent_rank = []
+        raw_rel_rank = []
+        filter_rel_rank = []
+        to_skip_ent = []
+        to_skip_rel = []
         num_triples = len(test_triplets)
         self.eval()
         with torch.no_grad():
@@ -71,10 +75,37 @@ class MMKGModel(nn.Module):
                 triple_batch = test_triplets[batch_start:batch_end, :]
                 score_ent_batch = score_ent[batch_start:batch_end, :]
                 score_rel_batch = score_rel[batch_start:batch_end, :]
-                target_ent = test_triplets[batch_start:batch_end, 2]  # 目标实体
-                target_rel = test_triplets[batch_start:batch_end, 1]  # 目标关系
-                raw_rank.append(sort_and_rank())
-                filter_rank.append(sort_and_rank())
+                target_ent_batch = test_triplets[batch_start:batch_end, 2]  # 目标实体
+                target_rel_batch = test_triplets[batch_start:batch_end, 1]  # 目标关系
+                raw_ent_rank.append(self.sort_and_rank(score_ent_batch, target_ent_batch))
+                filter_ent_rank.append(
+                    self.sort_and_rank_filter(triple_batch, score_ent_batch, target_ent_batch, to_skip_ent, predict=0))
+                raw_rel_rank.append(self.sort_and_rank(score_rel_batch, target_rel_batch))
+                filter_rel_rank.append(
+                    self.sort_and_rank_filter(triple_batch, score_rel_batch, target_rel_batch, to_skip_rel, predict=1))
+                ent_raw_mrr, ent_filter_mrr = self.get_mrr(raw_ent_rank), self.get_mrr(filter_ent_rank)
+                rel_raw_mrr, rel_filter_mrr = self.get_mrr(raw_rel_rank), self.get_mrr(filter_rel_rank)
+                ent_raw_hits, ent_filter_hits = self.get_hits(raw_ent_rank), self.get_hits(filter_ent_rank)
+                rel_raw_hits, rel_filter_hits = self.get_hits(raw_rel_rank), self.get_hits(filter_rel_rank)
+        return ("Metrics: \n" +
+                "Entity:  \n" +
+                ("raw:       mrr: {:.4f} Hit@1: {:.4f} Hit@3: {:.4f} Hit@10: {:.4f}\n".format(ent_raw_mrr,
+                                                                                              ent_raw_hits[0],
+                                                                                              ent_raw_hits[1],
+                                                                                              ent_raw_hits[2])) +
+                ("filter:    mrr: {:.4f} Hit@1: {:.4f} Hit@3: {:.4f} Hit@10: {:.4f}\n".format(ent_filter_mrr,
+                                                                                              ent_filter_hits[0],
+                                                                                              ent_filter_hits[1],
+                                                                                              ent_filter_hits[2])) +
+                "Relation:\n" +
+                ("raw:       mrr: {:.4f} Hit@1: {:.4f} Hit@3: {:.4f} Hit@10: {:.4f}\n".format(rel_raw_mrr,
+                                                                                              ent_raw_hits[0],
+                                                                                              ent_raw_hits[1],
+                                                                                              ent_raw_hits[2])) +
+                ("filter:    mrr: {:.4f} Hit@1: {:.4f} Hit@3: {:.4f} Hit@10: {:.4f}\n").format(rel_filter_mrr,
+                                                                                               rel_filter_hits[0],
+                                                                                               rel_filter_hits[1],
+                                                                                               rel_filter_hits[2]))
 
     """
         sort_and_rank:
@@ -103,11 +134,17 @@ class MMKGModel(nn.Module):
             
     """
 
-    def sort_and_rank_filter(self, batch_head, batch_rel, score, target, all_ans):
-        for i in range(len(batch_head)):
+    def sort_and_rank_filter(self, triple_batch, score, target, to_skip, predict):
+        if predict == 0:  # 实体预测
+            first = triple_batch[:, 0]
+            second = triple_batch[:, 1]
+        else:  # 关系预测
+            first = triple_batch[:, 0]
+            second = triple_batch[:, 2]
+        for i in range(len(triple_batch)):
             # 过滤除目标实体的所有三元组
             ans = target[i]
-            multi = list(all_ans[batch_head[i].item()][batch_rel[i].item()])
+            multi = list(to_skip[first[i].item()][second[i].item()])
             ground = score[i][ans]
             score[i][multi] = 0
             score[i][ans] = ground
@@ -116,6 +153,43 @@ class MMKGModel(nn.Module):
         indices = indices[:, 1].view(-1)
         return indices
 
+    """
+        get_mrr: mrr评估指标
+        Eg:
+            for i in range(3):
+                rank = torch.randint(low=0, high=6, size=(8,))
+                rank_all.append(rank)
+            print(rank_all)
+            mrr = model.get_mrr(rank_all)
+            print(mrr)
+    """
+
+    def get_mrr(self, rank):
+        rank_all = torch.cat(rank)
+        rank_all += 1
+        mrr = torch.mean(1 / rank_all)
+        return mrr
+
+    """
+        get_hits: hits评估指标
+        Eg:
+            for i in range(3):
+                rank = torch.randint(low=0, high=6, size=(8,))
+                rank_all.append(rank)
+            print(rank_all)
+            hits = model.get_hits(rank_all, hits=(1, 3, 10))
+            print(hits)
+    """
+
+    def get_hits(self, rank, hits=(1, 3, 10)):
+        rank_all = torch.cat(rank)
+        rank_all += 1
+        hits_res = []
+        for hit in hits:
+            avg_count = torch.mean((rank_all <= hit).float())
+            hits_res.append(avg_count)
+        return hits_res
+
 
 if __name__ == '__main__':
-    pass
+    model = MMKGModel(num_ent=6, num_rel=3, h_dim=4)
