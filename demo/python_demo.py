@@ -25,8 +25,11 @@ dic = {1: dic_set_1, 2: dic_set_2, 3: dic_set_3}
 print(dic)
 print(dic[1][0])
 
-dic = {1: 'a', 2: 'b', 3: 'c'}
-print("dic===>" + str(len(dic)))
+dic = {'a': 1, 'b': 2, 'c': 3}
+for k in dic:
+    print("k===>", k, dic[k])
+ls = dic.keys()
+print("ls==>", ls)
 
 # 2. random.sample / random.shuffle
 n = 5
