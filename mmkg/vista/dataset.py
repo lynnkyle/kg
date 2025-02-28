@@ -1,13 +1,12 @@
 import os.path
-
+import random
 import torch
 from torch.utils.data import Dataset
 
 
 class VTKG(Dataset):
-    def __init__(self, data, logger, ent_max_vis_len=-1, rel_max_vis_len=-1):
+    def __init__(self, data, ent_max_vis_len=-1, rel_max_vis_len=-1):
         self.data = data
-        self.logger = logger
         self.dir = f"../data/{data}/"
         self.ent2id = {}
         self.id2ent = []
@@ -58,36 +57,50 @@ class VTKG(Dataset):
         self.rel_max_vis_len = rel_max_vis_len
         self.gather_vis_feature()
         self.gather_txt_feature()
+        print()
 
     def gather_vis_feature(self):
-        self.ent2vis = torch.load(self.dir + 'visual_features_ent_sorted.pt')
-        # self.rel2vis = torch.load(self.dir + 'visual_features_rel_sorted.pt')
-        self.vis_feat_size = len(self.ent2vis[list(self.ent2vis.keys())[0]][0])
-
-        total_num = 0
+        if os.path.isfile(self.dir + 'vi'):
+            self.ent2vis = torch.load(self.dir + 'visual_features_ent_sorted.pt')
+        else:
+            self.ent2vis = {}
+        if os.path.isfile():
+            self.rel2vis = torch.load(self.dir + 'visual_features_rel_sorted.pt')
+        else:
+            self.rel2vis = {}
+        self.vis_feat_dim = len(self.ent2vis[list(self.ent2vis.keys())[0]][0])
         if self.ent_max_vis_len != -1:
             for ent_name in self.ent2vis:
-                num_feats = len(self.ent2vis[ent_name])
-                total_num += num_feats
                 self.ent2vis[ent_name] = self.ent2vis[ent_name][:self.ent_max_vis_len]
             for rel_name in self.rel2vis:
                 self.rel2vis[rel_name] = self.rel2vis[rel_name][:self.rel_max_vis_len]
         else:
             for ent_name in self.ent2vis:
-                num_feats = len(self.ent2vis[ent_name])
-                total_num += num_feats
-                if self.ent_max_vis_len < len(self.rel2vis[ent_name]):
-                    self.ent_max_vis_len = len(self.rel2vis[ent_name])
+                if self.ent_max_vis_len < len(self.ent2vis[ent_name]):
+                    self.ent_max_vis_len = len(self.ent2vis[ent_name])
             self.ent_max_vis_len = max(self.ent_max_vis_len, 0)
             for rel_name in self.rel2vis:
                 if self.rel_max_vis_len < len(self.rel2vis[rel_name]):
                     self.rel_max_vis_len = len(self.rel2vis[rel_name])
-            self.ent_max_vis_len = max(self.rel_max_vis_len, 0)
+            self.rel_max_vis_len = max(self.rel_max_vis_len, 0)
+        """
+            通过给没有视觉特征的地方打上掩码（True 表示缺失特征，False 表示有特征）来管理数据
+        """
+        self.ent_vis_mask = torch.full((self.num_ent, self.ent_max_vis_len), True).cuda()
+        self.ent_vis_matrix = torch.zeros((self.num_ent, self.ent_max_vis_len, self.vis_feat_dim))
+        self.rel_vis_mask = torch.full((self.num_rel, self.rel_max_vis_len), True).cuda()
+        self.rel_vis_matrix = torch.zeros((self.num_rel, self.rel_max_vis_len, self.vis_feat_dim * 3))
 
-        self.ent_vis_mask = torch.full((self.num_ent, self.ent_max_vis_len),)
-        self.ent_vis_matrix = torch.zeros()
-        self.rel_vis_mask = torch.full()
-        self.rel_vis_matrix = torch.zeros()
+        for ent_name in self.ent2vis:
+            ent_id = self.ent2id[ent_name]
+            num_feats = len(self.ent2vis[ent_name])
+            self.ent_vis_mask[ent_id, :num_feats] = False
+            self.ent_vis_matrix[ent_id, :num_feats] = self.ent2vis[ent_name]
+        for rel_name in self.rel2vis:
+            rel_id = self.rel2id[rel_name]
+            num_feats = len(self.rel2vis[rel_name])
+            self.rel_vis_mask[rel_id, :num_feats] = False
+            self.rel_vis_matrix[rel_id, :num_feats] = self.rel2vis[rel_name]
 
     def gather_txt_feature(self):
         self.ent2txt = torch.load(self.dir + 'textual_features_ent.pt')
@@ -99,6 +112,23 @@ class VTKG(Dataset):
             self.ent_txt_matrix[self.ent2id[ent_name]] = self.ent2txt[ent_name]
         for rel_name in self.rel2id:
             self.rel_txt_matrix[self.rel2id[rel_name]] = self.rel2txt[rel_name]
+
+    def __len__(self):
+        return len(self.train)
+
+    def __getitem__(self, idx):
+        """
+        :param idx:
+        :return: input, target
+        """
+        h, r, t = self.train[idx]
+        if random.random() < 0.5:
+            masked_triple = [self.num_ent + self.num_rel, r + self.num_ent, t + self.num_rel]
+            target = h
+        else:
+            masked_triple = [h + self.num_rel, r + self.num_ent, self.num_ent + self.num_rel]
+            target = t
+        return torch.tensor(masked_triple), torch.tensor(target)
 
 
 if __name__ == '__main__':

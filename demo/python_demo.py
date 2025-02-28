@@ -43,3 +43,39 @@ print(idx)
 # 3. *
 ls = ['apple', 'pear', 'egg']
 print(*ls)
+
+# 4. logging
+import logging
+
+#       设置方式一
+logging.basicConfig(level=logging.DEBUG)
+logging.debug('debug')
+logging.info('info')
+logging.warning('warning')
+logging.error('error')
+logging.critical('critical')
+
+#       设置方式二
+logger = logging.getLogger("vista")
+logger.setLevel(logging.INFO)
+format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler()
+handler.setFormatter(format)
+logger.addHandler(handler)
+logger.info('debug')
+logger.warning('warning')
+logger.error('error')
+
+
+# 5. vars 返回对象的__dict__属性
+class People(object):
+    def __init__(self, name, age):
+        self.name = name
+        self.age = age
+
+
+people = People('People', 20)
+print(vars(people))
+
+# 6.
+print(1e-4)

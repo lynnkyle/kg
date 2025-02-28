@@ -125,3 +125,10 @@ x = torch.tensor([1, 2, 3])
 y = torch.tensor([2, 4, 6])
 z = torch.inner(x, y)
 print(z)
+
+# 14. fill full
+a = torch.zeros(4, 3)
+x = torch.fill(a, False)
+print(x)
+y = torch.full((4, 3), False)
+print(y)

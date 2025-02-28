@@ -59,7 +59,7 @@ class VISTA(nn.Module):
         self.rel_encoder = nn.TransformerEncoder(rel_encoder_layer, num_layer_enc_rel)
         decoder_layer = nn.TransformerEncoderLayer(dim_str, num_head, dim_ffn, dropout, batch_first=True)
         self.decoder = nn.TransformerEncoder(decoder_layer, num_layer_dec)
-        init_weight()
+        self.init_weight()
 
     def init_weight(self):
         nn.init.xavier_normal_(self.ent_token)
