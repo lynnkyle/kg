@@ -77,5 +77,24 @@ class People(object):
 people = People('People', 20)
 print(vars(people))
 
-# 6.
-print(1e-4)
+# 6. tqdm
+import time
+from tqdm import tqdm
+
+# ls = ['apple', 'banana', 'pear', 'orange']
+# for s in tqdm(ls):
+#     print(s)
+#     time.sleep(2)
+
+# with tqdm(desc='fruit list', total=len(ls), unit='g') as bar:
+#     i = 0
+#     while i < len(ls):
+#         print(ls[i])
+#         time.sleep(3)
+#         bar.update(1)
+#         i = i + 1
+
+# 7. 索引
+x = torch.tensor([[[1, 2, 3], [4, 5, 6], [7, 8, 9]], [[1, 2, 3], [4, 5, 6], [7, 8, 9]]])  # [2,3,3]
+index = torch.tensor([[False, False, True], [False, False, True]])  # [2,3]
+print(x[index])

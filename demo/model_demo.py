@@ -3,6 +3,8 @@ from torch import nn
 
 # 1. Transformer
 """
+    实验一:
+    Encoder编码器不包括位置编码
     Encoder编码器被掩码的位置不会参与计算
 """
 embedding = nn.Embedding(num_embeddings=10, embedding_dim=8)
@@ -17,6 +19,17 @@ padding = torch.tensor([
     [0, 0, 0, 0, 0, 1, 1],
 ])
 inputs = embedding(x)  # [batch_size, seq_len, emb_dim]
-encoder = nn.TransformerEncoderLayer(d_model=8, nhead=4, batch_first=True)  # [!!!important] batch_first, transformer默认格式 [seq_len, batch_size, features]
+encoder = nn.TransformerEncoderLayer(d_model=8, nhead=4,
+                                     batch_first=True)  # [!!!important] batch_first, transformer默认格式 [seq_len, batch_size, features]
 output = encoder(inputs, src_key_padding_mask=(padding == 1))
-print(output.shape) # [batch_size, seq_len, emb_dim]
+print(output.shape)  # [batch_size, seq_len, emb_dim]
+"""
+    实验二:
+    Encoder编码器的输入
+    [batch_size, seq_len, embedding_dim]
+    d_model参数是embedding_dim, 要求输入的每个token的维度要相同
+"""
+encoder = nn.TransformerEncoderLayer(d_model=16, nhead=4, batch_first=True)
+x = torch.randn((2, 3, 16))
+output = encoder(x)
+print(output.shape)

@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 class VTKG(Dataset):
     def __init__(self, data, ent_max_vis_len=-1, rel_max_vis_len=-1):
         self.data = data
-        self.dir = f"../data/{data}/"
+        self.dir = f"./data/{data}/"
         self.ent2id = {}
         self.id2ent = []
         self.rel2id = {}
@@ -57,14 +57,13 @@ class VTKG(Dataset):
         self.rel_max_vis_len = rel_max_vis_len
         self.gather_vis_feature()
         self.gather_txt_feature()
-        print()
 
     def gather_vis_feature(self):
-        if os.path.isfile(self.dir + 'vi'):
+        if os.path.isfile(self.dir + 'visual_features_ent_sorted.pt'):
             self.ent2vis = torch.load(self.dir + 'visual_features_ent_sorted.pt')
         else:
             self.ent2vis = {}
-        if os.path.isfile():
+        if os.path.isfile(self.dir + 'visual_features_rel_sorted.pt'):
             self.rel2vis = torch.load(self.dir + 'visual_features_rel_sorted.pt')
         else:
             self.rel2vis = {}
@@ -87,9 +86,9 @@ class VTKG(Dataset):
             通过给没有视觉特征的地方打上掩码（True 表示缺失特征，False 表示有特征）来管理数据
         """
         self.ent_vis_mask = torch.full((self.num_ent, self.ent_max_vis_len), True).cuda()
-        self.ent_vis_matrix = torch.zeros((self.num_ent, self.ent_max_vis_len, self.vis_feat_dim))
+        self.ent_vis_matrix = torch.zeros((self.num_ent, self.ent_max_vis_len, self.vis_feat_dim)).cuda()
         self.rel_vis_mask = torch.full((self.num_rel, self.rel_max_vis_len), True).cuda()
-        self.rel_vis_matrix = torch.zeros((self.num_rel, self.rel_max_vis_len, self.vis_feat_dim * 3))
+        self.rel_vis_matrix = torch.zeros((self.num_rel, self.rel_max_vis_len, self.vis_feat_dim * 3)).cuda()
 
         for ent_name in self.ent2vis:
             ent_id = self.ent2id[ent_name]
@@ -129,7 +128,3 @@ class VTKG(Dataset):
             masked_triple = [h + self.num_rel, r + self.num_ent, self.num_ent + self.num_rel]
             target = t
         return torch.tensor(masked_triple), torch.tensor(target)
-
-
-if __name__ == '__main__':
-    data = VTKG(data="FB15K237", logger=None)

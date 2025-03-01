@@ -99,15 +99,15 @@ class VISTA(nn.Module):
 
     def score(self, ent_embs, rel_embs, triples):
         """
-        :param ent_embs:
-        :param rel_embs:
-        :param triples: [batch_size, 3] 二维张量
+        :param ent_embs:    [num_entity, emb_dim]
+        :param rel_embs:    [num_entity, emb_dim]
+        :param triples:     [batch_size, 3] 二维张量
         :return:
         """
         h_seq = ent_embs[triples[:, 0] - self.num_rel].unsqueeze(1)  # [batch_size, 1, emb_dim]
         r_seq = rel_embs[triples[:, 1] - self.num_ent].unsqueeze(1)  # [batch_size, 1, emb_dim]
         t_seq = ent_embs[triples[:, 2] - self.num_rel].unsqueeze(1)  # [batch_size, 1, emb_dim]
-        dec_seq = torch.cat([h_seq, r_seq, t_seq], dim=1)
-        output_dec = self.decoder(dec_seq)[triples == self.num_ent + self.num_rel]
-        score = torch.inner(output_dec, ent_embs)
+        dec_seq = torch.cat([h_seq, r_seq, t_seq], dim=1)  # [batch_size, 3, emb_dim]
+        output_dec = self.decoder(dec_seq)[triples == self.num_ent + self.num_rel]  # [batch_size, 1, emb_dim]
+        score = torch.inner(output_dec, ent_embs)  # [batch_size, num_entity]
         return score
