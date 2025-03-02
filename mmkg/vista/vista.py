@@ -62,20 +62,24 @@ class VISTA(nn.Module):
         self.init_weight()
 
     def init_weight(self):
-        nn.init.xavier_normal_(self.ent_token)
-        nn.init.xavier_normal_(self.rel_token)
-        nn.init.xavier_normal_(self.ent_emb)
-        nn.init.xavier_normal_(self.rel_emb)
-        nn.init.xavier_normal_(self.lp_token)
-        nn.init.xavier_normal_(self.pos_str_ent)
-        nn.init.xavier_normal_(self.pos_vis_ent)
-        nn.init.xavier_normal_(self.pos_txt_ent)
-        nn.init.xavier_normal_(self.pos_str_rel)
-        nn.init.xavier_normal_(self.pos_vis_rel)
-        nn.init.xavier_normal_(self.pos_txt_rel)
-        nn.init.xavier_normal_(self.pos_head)
-        nn.init.xavier_normal_(self.pos_rel)
-        nn.init.xavier_normal_(self.pos_tail)
+        nn.init.xavier_uniform_(self.ent_emb)
+        nn.init.xavier_uniform_(self.rel_emb)
+        nn.init.xavier_uniform_(self.proj_ent_vis.weight)
+        nn.init.xavier_uniform_(self.proj_rel_vis.weight)
+        nn.init.xavier_uniform_(self.proj_txt.weight)
+
+        nn.init.xavier_uniform_(self.ent_token)
+        nn.init.xavier_uniform_(self.rel_token)
+        nn.init.xavier_uniform_(self.lp_token)
+        nn.init.xavier_uniform_(self.pos_str_ent)
+        nn.init.xavier_uniform_(self.pos_vis_ent)
+        nn.init.xavier_uniform_(self.pos_txt_ent)
+        nn.init.xavier_uniform_(self.pos_str_rel)
+        nn.init.xavier_uniform_(self.pos_vis_rel)
+        nn.init.xavier_uniform_(self.pos_txt_rel)
+        nn.init.xavier_uniform_(self.pos_head)
+        nn.init.xavier_uniform_(self.pos_rel)
+        nn.init.xavier_uniform_(self.pos_tail)
 
         self.proj_ent_vis.bias.data.zero_()
         self.proj_rel_vis.bias.data.zero_()
@@ -104,9 +108,9 @@ class VISTA(nn.Module):
         :param triples:     [batch_size, 3] 二维张量
         :return:
         """
-        h_seq = ent_embs[triples[:, 0] - self.num_rel].unsqueeze(1)  # [batch_size, 1, emb_dim]
-        r_seq = rel_embs[triples[:, 1] - self.num_ent].unsqueeze(1)  # [batch_size, 1, emb_dim]
-        t_seq = ent_embs[triples[:, 2] - self.num_rel].unsqueeze(1)  # [batch_size, 1, emb_dim]
+        h_seq = ent_embs[triples[:, 0] - self.num_rel].unsqueeze(1) + self.pos_head  # [batch_size, 1, emb_dim]
+        r_seq = rel_embs[triples[:, 1] - self.num_ent].unsqueeze(1) + self.pos_rel  # [batch_size, 1, emb_dim]
+        t_seq = ent_embs[triples[:, 2] - self.num_rel].unsqueeze(1) + self.pos_tail  # [batch_size, 1, emb_dim]
         dec_seq = torch.cat([h_seq, r_seq, t_seq], dim=1)  # [batch_size, 3, emb_dim]
         output_dec = self.decoder(dec_seq)[triples == self.num_ent + self.num_rel]  # [batch_size, 1, emb_dim]
         score = torch.inner(output_dec, ent_embs)  # [batch_size, num_entity]

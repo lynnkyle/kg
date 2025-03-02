@@ -31,13 +31,19 @@ parser.add_argument('--model', default='VISTA', type=str)
 parser.add_argument('--ent_max_vis_len', default=3, type=int)
 parser.add_argument('--rel_max_vis_len', default=3, type=int)
 parser.add_argument('--batch_size', default=512, type=int)
-parser.add_argument('--best_epoch', default=0, type=int)
+parser.add_argument('--best_epoch', default=30, type=int)
 parser.add_argument('--dim_str', default=256, type=int)
 parser.add_argument('--str_dropout', default=0.9, type=int)
 parser.add_argument('--vis_dropout', default=0.4, type=int)
 parser.add_argument('--txt_dropout', default=0.1, type=int)
 parser.add_argument('--weight_decay', default=0.0, type=float)
-parser.add_argument()
+# Transformer网络参数
+parser.add_argument('--num_head', default=4, type=int)
+parser.add_argument('--dim_ffn', default=2048, type=int)
+parser.add_argument('--num_layer_enc_ent', default=2, type=int)
+parser.add_argument('--num_layer_enc_rel', default=1, type=int)
+parser.add_argument('--num_layer_dec', default=2, type=int)
+parser.add_argument('--dropout', default=0.01, type=int)
 args = parser.parse_args()
 
 """
@@ -66,7 +72,7 @@ model = VISTA(kg.num_ent, kg.num_rel, args.dim_str, ent_vis=kg.ent_vis_matrix, r
               num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
               vis_dropout=args.vis_dropout, txt_dropout=args.txt_dropout).to(device)
 
-loaded_ckpt = torch.load_state_dict(torch.load(f'./ckpt/{args.model}/{args.data}/{args.best_epoch}.ckpt'))
+loaded_ckpt = torch.load(f'./ckpt/{args.model}/{args.data}/{args.best_epoch}.ckpt')
 model.load_state_dict(loaded_ckpt['model_state_dict'])
 
 """
@@ -81,11 +87,11 @@ with torch.no_grad():
         head_score = model.score(ent_embs, rel_embs,
                                  torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda())[
             0].detach().cpu().numpy()
-        head_rank = calculate_rank(head_score, ent_embs, rel_embs)
+        head_rank = calculate_rank(head_score, h, kg.filter_dict[(-1, r, t)])
         tail_score = model.score(ent_embs, rel_embs,
                                  torch.tensor([[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]).cuda())[
             0].detach().cpu().numpy()
-        tail_rank = calculate_rank(tail_score, ent_embs, rel_embs)
+        tail_rank = calculate_rank(tail_score, t, kg.filter_dict[(h, r, -1)])
         rank_list.append(head_rank)
         rank_list.append(tail_rank)
     rank_list = np.array(rank_list)

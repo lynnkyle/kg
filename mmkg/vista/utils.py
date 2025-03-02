@@ -4,7 +4,7 @@ import numpy as np
 def calculate_rank(score, target, filter_list):
     score_target = score[target]
     score[filter_list] = score_target - 1
-    rank = np.sum(target > score_target) + np.sum(target == score_target) // 2 + 1
+    rank = np.sum(score > score_target) + np.sum(score == score_target) // 2 + 1
     return rank
 
 

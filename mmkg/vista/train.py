@@ -35,8 +35,7 @@ parser.add_argument('--model', default='VISTA', type=str)
 parser.add_argument('--ent_max_vis_len', default=3, type=int)
 parser.add_argument('--rel_max_vis_len', default=3, type=int)
 parser.add_argument('--num_epoch', default=150, type=int)
-parser.add_argument('--log_epoch', default=10, type=int)
-parser.add_argument('--valid_epoch', default=30, type=int)
+parser.add_argument('--valid_epoch', default=50, type=int)
 parser.add_argument('--batch_size', default=512, type=int)
 parser.add_argument('--dim_str', default=256, type=int)
 parser.add_argument('--str_dropout', default=0.9, type=int)
@@ -59,7 +58,6 @@ args = parser.parse_args()
 """
     文件保存
 """
-
 if not args.no_write:
     os.makedirs(f"./result/{args.model}/{args.data}", exist_ok=True)
     os.makedirs(f"./ckpt/{args.model}/{args.data}", exist_ok=True)
@@ -82,7 +80,7 @@ logger.addHandler(file_handler)
 """
 # 数据集
 kg = VTKG(data=args.data, ent_max_vis_len=args.ent_max_vis_len, rel_max_vis_len=args.rel_max_vis_len)
-kg_loader = DataLoader(kg, batch_size=args.batch_size, shuffle=True)
+kg_loader = DataLoader(kg, batch_size=args.batch_size, shuffle=False)
 # 设备
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -107,7 +105,7 @@ scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=args.s
 logger.info("Start training...")
 best_mrr = 0
 last_epoch = 0
-model.train()
+# model.train()
 for epoch in range(last_epoch + 1, args.num_epoch + 1):
     total_loss = 0
     for batch, label in tqdm(kg_loader):
@@ -120,39 +118,38 @@ for epoch in range(last_epoch + 1, args.num_epoch + 1):
         clip_grad_norm_(model.parameters(), 0.1)
         optimizer.step()
     scheduler.step()
-    if epoch % args.log_epoch == 0:
-        logger.info(f"Epoch {epoch}, loss: {total_loss}")
-    if epoch % args.valid_epoch == 0:
-        model.eval()
-        with torch.no_grad():
-            ent_embs, rel_embs = model()
-            list_rank = []
-            for triple in tqdm(kg.valid):
-                h, r, t = triple
-                head_score = model.score(ent_embs, rel_embs,
-                                         torch.tensor(
-                                             [[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda())[
-                    0].detach().cpu().numpy()
-                head_rank = calculate_rank(head_score, h, kg.filter_dict[(-1, r, t)])
-                tail_score = model.score(ent_embs, rel_embs,
-                                         torch.tensor(
-                                             [[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]).cuda())[
-                    0].detach().cpu().numpy()
-                tail_rank = calculate_rank(tail_score, t, kg.filter_dict[(h, r, -1)])
-                list_rank.append(head_rank)
-                list_rank.append(tail_rank)
-            list_rank = np.array(list_rank)
-            mr, mrr, hit10, hit3, hit1 = metrics(list_rank)
-            logger.info("Entity Prediction on Validation Set")
-            logger.info(f"MR: {mr:.4f}")
-            logger.info(f"MRR: {mrr:.4f}")
-            logger.info(f"Hit@10: {hit10:.4f}")
-            logger.info(f"Hit@3: {hit3:.4f}")
-            logger.info(f"Hit@1: {hit1:.4f}")
-        if best_mrr < mrr:
-            best_mrr = mrr
-            torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(),
-                        'scheduler_state_dict': scheduler.state_dict()},
-                       f'./ckpt/{args.model}/{args.data}/{epoch}.ckpt')
-        model.train()
+    logger.info(f"Epoch {epoch}, loss: {total_loss}")
+    # if epoch % args.valid_epoch == 0:
+    model.eval()
+    with torch.no_grad():
+        ent_embs, rel_embs = model()
+        list_rank = []
+        for triple in tqdm(kg.valid):
+            h, r, t = triple
+            head_score = model.score(ent_embs, rel_embs,
+                                     torch.tensor(
+                                         [[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda())[
+                0].detach().cpu().numpy()
+            head_rank = calculate_rank(head_score, h, kg.filter_dict[(-1, r, t)])
+            tail_score = model.score(ent_embs, rel_embs,
+                                     torch.tensor(
+                                         [[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]).cuda())[
+                0].detach().cpu().numpy()
+            tail_rank = calculate_rank(tail_score, t, kg.filter_dict[(h, r, -1)])
+            list_rank.append(head_rank)
+            list_rank.append(tail_rank)
+        list_rank = np.array(list_rank)
+        mr, mrr, hit10, hit3, hit1 = metrics(list_rank)
+        logger.info("Entity Prediction on Validation Set")
+        logger.info(f"MR: {mr:.4f}")
+        logger.info(f"MRR: {mrr:.4f}")
+        logger.info(f"Hit@10: {hit10:.4f}")
+        logger.info(f"Hit@3: {hit3:.4f}")
+        logger.info(f"Hit@1: {hit1:.4f}")
+    if best_mrr < mrr:
+        best_mrr = mrr
+        torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict()},
+                   f'./ckpt/{args.model}/{args.data}/{epoch}.ckpt')
+    model.train()
 logger.info("Done")
