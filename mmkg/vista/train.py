@@ -80,7 +80,7 @@ logger.addHandler(file_handler)
 """
 # 数据集
 kg = VTKG(data=args.data, ent_max_vis_len=args.ent_max_vis_len, rel_max_vis_len=args.rel_max_vis_len)
-kg_loader = DataLoader(kg, batch_size=args.batch_size, shuffle=False)
+kg_loader = DataLoader(kg, batch_size=args.batch_size, shuffle=True)
 # 设备
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)

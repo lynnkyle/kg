@@ -132,3 +132,18 @@ x = torch.fill(a, False)
 print(x)
 y = torch.full((4, 3), False)
 print(y)
+
+# 15. 学习率调度器
+# 1). WarmRestarts余弦退火
+from torch.optim import lr_scheduler
+# lr_scheduler.CosineAnnealingWarmRestarts()
+# 2). 自定义余弦退火
+# lr_scheduler.StepLR(, step_size=5, gamma=0.1)
+
+# 16. 梯度裁剪器
+
+# 17. default_collate
+from torch.utils.data.dataloader import default_collate
+
+res = default_collate([(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)])
+print(res)

@@ -98,3 +98,7 @@ from tqdm import tqdm
 x = torch.tensor([[[1, 2, 3], [4, 5, 6], [7, 8, 9]], [[1, 2, 3], [4, 5, 6], [7, 8, 9]]])  # [2,3,3]
 index = torch.tensor([[False, False, True], [False, False, True]])  # [2,3]
 print(x[index])
+
+# 8. min
+min_num = min([-1000, 100, 8])
+print(min_num)
