@@ -147,3 +147,6 @@ from torch.utils.data.dataloader import default_collate
 
 res = default_collate([(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)])
 print(res)
+# 18 torch.max
+x = torch.tensor([[3, 424, 24, 2], [32, 323, 4, 2]])
+print(torch.max(x, dim=1)[1])
