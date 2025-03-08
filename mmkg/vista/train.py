@@ -66,7 +66,7 @@ if not args.no_write:
 """
     日志输出
 """
-logger = logging.getLogger('train')
+logger = logging.getLogger('vista')
 logger.setLevel(logging.INFO)
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))

@@ -121,3 +121,10 @@ print(ans)
 ls = [7, 56, 2, 54, 65, 99, 34]
 res = sorted(ls, key=lambda x: -x)
 print(res)
+
+# 11. 列表
+ls = defaultdict(list)
+ls[2].append(3)
+ls[3].append(4)
+ls[3].append(5)
+print(ls)
