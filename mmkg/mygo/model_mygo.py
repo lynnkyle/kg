@@ -7,7 +7,7 @@ class MyGo(nn.Module):
     def __init__(self, num_ent, num_rel, str_dim,
                  visual_tokenizer, textual_tokenizer,
                  visual_token_index, textual_token_index,
-                 ent_vis_mask, ent_txt_mask,
+                 visual_ent_mask, textual_ent_mask,
                  num_head, dim_hid, num_layer_enc_ent,
                  num_layer_enc_rel, num_layer_dec,
                  dropout=0.1, str_dropout=0.6,
@@ -20,7 +20,7 @@ class MyGo(nn.Module):
         if visual_tokenizer == 'beit':
             visual_tokens = torch.load("tokens/visual.pth")
         elif visual_tokenizer == 'vggan':
-            visual_tokens = torch.load("tokens/visual.pth")
+            visual_tokens = torch.load("tokens/visual_vqgan.pth")
         else:
             raise NotImplementedError
         if textual_tokenizer == 'bert':
@@ -36,7 +36,7 @@ class MyGo(nn.Module):
         self.textual_token_index = textual_token_index
         self.textual_token_embed = nn.Embedding.from_pretrained(textual_tokens).requires_grad_(False)
         false_ent = torch.full((self.num_ent, 1), False).cuda()
-        self.ent_mask = torch.cat([false_ent, false_ent, ent_vis_mask, ent_txt_mask], dim=1)
+        self.ent_mask = torch.cat([false_ent, false_ent, visual_ent_mask, textual_ent_mask], dim=1)
         false_rel = torch.full((self.num_rel, 1), False).cuda()
         self.rel_mask = torch.cat([false_rel, false_rel], dim=1)
         self.score_function = score_function
@@ -84,7 +84,7 @@ class MyGo(nn.Module):
         self.decoder = nn.TransformerEncoder(decoder_layer, num_layers=num_layer_dec)
 
         self.contrastive = ContrastiveLoss()
-        self.num_visual_token = ent_vis_mask.shape[1]
+        self.num_visual_token = visual_ent_mask.shape[1]
         if self.score_function == 'tucker':
             self.tucker_decoder = Tucker(str_dim, str_dim)
         else:

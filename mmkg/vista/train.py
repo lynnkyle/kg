@@ -34,7 +34,7 @@ parser.add_argument('--data', default='FB15K237', type=str)
 parser.add_argument('--model', default='VISTA', type=str)
 parser.add_argument('--ent_max_vis_len', default=3, type=int)
 parser.add_argument('--rel_max_vis_len', default=3, type=int)
-parser.add_argument('--num_epoch', default=150, type=int)
+parser.add_argument('--num_epoch', default=200, type=int)
 parser.add_argument('--valid_epoch', default=50, type=int)
 parser.add_argument('--batch_size', default=512, type=int)
 parser.add_argument('--dim_str', default=256, type=int)
@@ -91,14 +91,17 @@ model = VISTA(kg.num_ent, kg.num_rel, args.dim_str, ent_vis=kg.ent_vis_matrix, r
               num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
               num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
               vis_dropout=args.vis_dropout, txt_dropout=args.txt_dropout).to(device)
+state_dict = torch.load('/home/ps/lzy/kg/mmkg/vista/ckpt/VISTA/FB15K237/80.ckpt')
+model.load_state_dict(state_dict['model_state_dict'])
 # 损失函数
 loss_fn = nn.CrossEntropyLoss(label_smoothing=args.smoothing)
 # 优化器
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+optimizer.load_state_dict(state_dict['optimizer_state_dict'])
 # 学习率调度器
 "   一般来说，学习率是按 epoch 进行调整的，而不是按每个 batch 调整  "
 scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=args.step_size, T_mult=2)
-
+scheduler.load_state_dict(state_dict['scheduler_state_dict'])
 """
     模型训练
 """
@@ -150,6 +153,6 @@ for epoch in range(last_epoch + 1, args.num_epoch + 1):
             best_mrr = mrr
             torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(),
                         'scheduler_state_dict': scheduler.state_dict()},
-                       f'./ckpt/{args.model}/{args.data}/{epoch}.ckpt')
+                       f'./ckpt/{args.model}/{args.data}/{80 + epoch}.ckpt')
         model.train()
 logger.info("Done")

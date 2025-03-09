@@ -1,5 +1,7 @@
 import torch
 
+from main import model
+
 # 1.返回张量中所有非零元素的索引
 x = torch.randint(low=0, high=2, size=(3, 3))
 print(x)
@@ -135,12 +137,14 @@ print(y)
 
 # 15. 学习率调度器
 # 1). WarmRestarts余弦退火
-from torch.optim import lr_scheduler
-# lr_scheduler.CosineAnnealingWarmRestarts()
-# 2). 自定义余弦退火
-# lr_scheduler.StepLR(, step_size=5, gamma=0.1)
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+
+optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+scheduler = CosineAnnealingWarmRestarts(optimizer, 50, 2, eta_min=0.0001)
 
 # 16. 梯度裁剪器
+x = nn.Parameter(torch.tensor([[1, 2], [3, 4]], dtype=torch.float), requires_grad=True)
+torch.nn.utils.clip_grad_norm_(x, 2)
 
 # 17. default_collate
 from torch.utils.data.dataloader import default_collate
@@ -199,3 +203,17 @@ print(x)
 
 x.fill_(1)
 print(x)
+
+# 24. torch.numel
+x = torch.tensor([[[1, 2, 3], [4, 5, 6]], [[1, 2, 3], [4, 5, 6]]])
+print(x.numel())
+""" torch.load """
+# state_dict = torch.load('/home/ps/lzy/kg/mmkg/vista/ckpt/VISTA/FB15K237/30.ckpt')['model_state_dict']
+# z = model.state_dict()
+# param_state_dict = {k: v for k, v in state_dict.items() if v.numel() == model.state_dict()[k].numel()}
+# print(param_state_dict)
+
+# 25. 索引可以不用在cuda上
+x = torch.tensor([[1, 2, 3], [4, 5, 6], [4, 5, 6]]).cuda()
+index = torch.tensor([0, 1])
+print(x[index])

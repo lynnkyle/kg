@@ -68,7 +68,7 @@ def get_entity_visual_tokens(dataset, max_num, type='beit'):
         else:
             ent_id2tkns.append([token_size - 1] * max_num)
             ent_key_mask.append(([True] * max_num))
-    return torch.LongTensor(ent_id2tkns), torch.BoolTensor(ent_key_mask)
+    return torch.LongTensor(ent_id2tkns), torch.BoolTensor(ent_key_mask).cuda()
 
 
 def get_entity_textual_tokens(dataset, max_num, type='bert'):
@@ -107,7 +107,7 @@ def get_entity_textual_tokens(dataset, max_num, type='bert'):
         else:
             ent_id2tkns.append([token_size - 1] * max_num)
             ent_key_mask.append(([True] * max_num))
-    return torch.LongTensor(ent_id2tkns), torch.BoolTensor(ent_key_mask)
+    return torch.LongTensor(ent_id2tkns), torch.BoolTensor(ent_key_mask).cuda()
 
 
 if __name__ == '__main__':
