@@ -35,9 +35,9 @@ class MyGo(nn.Module):
         self.visual_token_embed = nn.Embedding.from_pretrained(visual_tokens).requires_grad_(False)
         self.textual_token_index = textual_token_index
         self.textual_token_embed = nn.Embedding.from_pretrained(textual_tokens).requires_grad_(False)
-        false_ent = torch.full((self.num_ent, 1), False).cuda()
+        false_ent = torch.full((self.num_ent, 1), False).cuda(1)
         self.ent_mask = torch.cat([false_ent, false_ent, visual_ent_mask, textual_ent_mask], dim=1)
-        false_rel = torch.full((self.num_rel, 1), False).cuda()
+        false_rel = torch.full((self.num_rel, 1), False).cuda(1)
         self.rel_mask = torch.cat([false_rel, false_rel], dim=1)
         self.score_function = score_function
         self.visual_dim = visual_tokens.shape[1]
@@ -74,13 +74,13 @@ class MyGo(nn.Module):
         self.pos_tail = nn.Parameter(torch.Tensor(1, 1, str_dim))
 
         ent_encoder_layer = nn.TransformerEncoderLayer(d_model=str_dim, nhead=num_head, dim_feedforward=dim_hid,
-                                                       dropout=dropout)
+                                                       dropout=dropout, batch_first=True)
         self.ent_encoder = nn.TransformerEncoder(ent_encoder_layer, num_layers=num_layer_enc_ent)
         rel_encoder_layer = nn.TransformerEncoderLayer(d_model=str_dim, nhead=num_head, dim_feedforward=dim_hid,
-                                                       dropout=dropout)
+                                                       dropout=dropout, batch_first=True)
         self.rel_encoder = nn.TransformerEncoder(rel_encoder_layer, num_layers=num_layer_enc_rel)
         decoder_layer = nn.TransformerEncoderLayer(d_model=str_dim, nhead=num_head, dim_feedforward=dim_hid,
-                                                   dropout=dropout)
+                                                   dropout=dropout, batch_first=True)
         self.decoder = nn.TransformerEncoder(decoder_layer, num_layers=num_layer_dec)
 
         self.contrastive = ContrastiveLoss()
@@ -89,6 +89,7 @@ class MyGo(nn.Module):
             self.tucker_decoder = Tucker(str_dim, str_dim)
         else:
             pass
+        self.init_weights()
 
     def init_weights(self):
         nn.init.xavier_uniform_(self.ent_token)
@@ -109,9 +110,9 @@ class MyGo(nn.Module):
 
     def forward(self):
         ent_token = self.ent_token.tile(self.num_ent, 1, 1)
-        rep_ent_str = self.emb_drop(self.str_ln(ent_token)) + self.pos_str_ent
+        rep_ent_str = self.str_drop(self.str_ln(ent_token)) + self.pos_str_ent
         ent_visual_token = self.visual_token_embed(self.visual_token_index)
-        rep_ent_visual = self.visual_drop(self.visual_ln(self.proj_ent_visual(ent_visual_token))) + self.pos_vis_ent
+        rep_ent_visual = self.visual_drop(self.visual_ln(self.proj_ent_visual(ent_visual_token))) + self.pos_visual_ent
         ent_textual_token = self.textual_token_embed(self.textual_token_index)
         rep_ent_textual = self.textual_drop(
             self.textual_ln(self.proj_ent_textual(ent_textual_token))) + self.pos_textual_ent

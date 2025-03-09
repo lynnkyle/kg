@@ -9,7 +9,7 @@ import torch
 from torch import nn
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
-from mmkg.vista.dataset import VTKG
+from dataset import VTKG
 from torch.utils.data import DataLoader
 from vista import VISTA
 from utils import calculate_rank, metrics
@@ -91,7 +91,7 @@ model = VISTA(kg.num_ent, kg.num_rel, args.dim_str, ent_vis=kg.ent_vis_matrix, r
               num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
               num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
               vis_dropout=args.vis_dropout, txt_dropout=args.txt_dropout).to(device)
-state_dict = torch.load('/home/ps/lzy/kg/mmkg/vista/ckpt/VISTA/FB15K237/80.ckpt')
+state_dict = torch.load('/home/ps/lzy/kg/mmkg/vista/ckpt/VISTA/FB15K237/130.ckpt')
 model.load_state_dict(state_dict['model_state_dict'])
 # 损失函数
 loss_fn = nn.CrossEntropyLoss(label_smoothing=args.smoothing)
@@ -154,6 +154,6 @@ for epoch in range(last_epoch + 1, args.num_epoch + 1):
             best_mrr = mrr
             torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(),
                         'scheduler_state_dict': scheduler.state_dict()},
-                       f'./ckpt/{args.model}/{args.data}/{80 + epoch}.ckpt')
+                       f'./ckpt/{args.model}/{args.data}/{130 + epoch}.ckpt')
         model.train()
 logger.info("Done")

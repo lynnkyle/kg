@@ -16,10 +16,11 @@ from utils import calculate_rank, metrics
 """
     参数设置
 """
+torch.cuda.set_device(1)
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default='MKG-W')
 parser.add_argument('--model', type=str, default='MyGo')
-parser.add_argument('--device', type=int, default='cuda')
+parser.add_argument('--device', type=str, default='cuda:1')
 parser.add_argument('--num_epoch', type=int, default=100)
 parser.add_argument('--valid_epoch', type=int, default=50)
 parser.add_argument('--str_dim', default=256, type=int)
@@ -29,6 +30,7 @@ parser.add_argument('--visual_dropout', default=0.3, type=float)
 parser.add_argument('--textual_dropout', default=0.1, type=float)
 parser.add_argument('--fgcl_weight', default=0.01, type=float)
 parser.add_argument('--lr', default=1e-4, type=float)
+parser.add_argument('--mu', default=0.01, type=float)
 # Transformer的配置
 parser.add_argument('--num_head', default=2, type=int)
 parser.add_argument('--dim_hid', default=1024, type=int)
@@ -55,7 +57,7 @@ format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s
 stream_handler = logging.StreamHandler(stream=sys.stdout)
 stream_handler.setFormatter(format)
 logger.addHandler(stream_handler)
-file_handler = logging.FileHandler(f'log/{args.model}/{args.data}')
+file_handler = logging.FileHandler(f'log/{args.model}/{args.data}/log.log')
 file_handler.setFormatter(format)
 logger.addHandler(file_handler)
 
@@ -75,7 +77,7 @@ model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visua
              visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
              dim_hid=args.dim_hid, num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
              num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
-             visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout)
+             visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout).to(device=args.device)
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
 
@@ -91,7 +93,7 @@ def train_one_epoch(model, optimizer):
     for batch, label in tqdm(kg_loader):
         ent_embs, rel_embs = model()
         score = model.score(batch, ent_embs, rel_embs)
-        loss = loss_fn(score, label)
+        loss = loss_fn(score, label.cuda(1))
         if args.fgcl_weight != 0:
             loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
         total_loss += loss.item()
