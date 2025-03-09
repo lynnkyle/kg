@@ -125,7 +125,7 @@ class MyGo(nn.Module):
         :param triples: [batch_size, 3]
         :param emb_ent: [num_ent, str_dim]
         :param emb_rel: [num_rel, str_dim]
-        :return:
+        :return: [batch_size, num_entity]
         """
         h_seq = emb_ent[triples[:, 0] - self.num_rel].unsqueeze(1) + self.pos_head  # [batch_size, 1, str_dim]
         r_seq = emb_rel[triples[:, 1] - self.num_ent].unsqueeze(1) + self.pos_rel  # [batch_size, 1, str_dim]

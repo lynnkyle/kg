@@ -102,6 +102,7 @@ optimizer.load_state_dict(state_dict['optimizer_state_dict'])
 "   一般来说，学习率是按 epoch 进行调整的，而不是按每个 batch 调整  "
 scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=args.step_size, T_mult=2)
 scheduler.load_state_dict(state_dict['scheduler_state_dict'])
+
 """
     模型训练
 """
