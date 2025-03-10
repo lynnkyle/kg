@@ -71,7 +71,7 @@ class ContrastiveLoss(nn.Module):
             计算第一次、第二次过实体编码器Transformer得到的嵌入的损失
         """
         labels = torch.arange(batch_sim.size(0)).long().to('cuda')
-        return self.loss(batch_sim, labels.cuda(1))
+        return self.loss(batch_sim, labels.cuda())
 
 
 if __name__ == '__main__':

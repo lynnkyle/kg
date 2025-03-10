@@ -1,7 +1,7 @@
 import os
 import sys
 import argparse
-
+import random
 import numpy as np
 from tqdm import tqdm
 
@@ -14,15 +14,28 @@ from merge_tokens import get_entity_visual_tokens, get_entity_textual_tokens
 from utils import calculate_rank, metrics
 
 """
+    代码可复现
+"""
+random.seed(0)
+np.random.seed(0)
+torch.manual_seed(0)
+torch.set_num_threads(8)
+torch.cuda.manual_seed_all(0)
+torch.cuda.empty_cache()
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
+"""
     参数设置
 """
 torch.cuda.set_device(1)
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default='MKG-W')
+parser.add_argument('--batch_size', type=int, default=2048)
 parser.add_argument('--model', type=str, default='MyGo')
 parser.add_argument('--device', type=str, default='cuda:1')
 parser.add_argument('--num_epoch', type=int, default=100)
-parser.add_argument('--valid_epoch', type=int, default=50)
+parser.add_argument('--valid_epoch', type=int, default=1)
 parser.add_argument('--str_dim', default=256, type=int)
 parser.add_argument("--no_write", action='store_true')
 parser.add_argument('--str_dropout', default=0.6, type=float)
@@ -65,13 +78,13 @@ logger.addHandler(file_handler)
     创建数据集
 """
 kg = VTKG(data='MKG-W', max_vis_len=-1)
-kg_loader = torch.utils.data.DataLoader(kg, batch_size=32, shuffle=True)
+kg_loader = torch.utils.data.DataLoader(kg, batch_size=args.batch_size, shuffle=False)
 
 """
     模型要素
 """
 visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=8)
-textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=4)
+textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=8)
 model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
              textual_tokenizer='bert', visual_token_index=visual_token_index, textual_token_index=textual_token_index,
              visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
@@ -93,7 +106,7 @@ def train_one_epoch(model, optimizer):
     for batch, label in tqdm(kg_loader):
         ent_embs, rel_embs = model()
         score = model.score(batch, ent_embs, rel_embs)
-        loss = loss_fn(score, label.cuda(1))
+        loss = loss_fn(score, label.cuda())
         if args.fgcl_weight != 0:
             loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
         total_loss += loss.item()
@@ -111,12 +124,14 @@ def valid_eval_metric(valid_or_test):
     for triple in tqdm(valid_or_test):
         h, r, t = triple
         ent_embs, rel_embs = model()
-        head_score = model.score(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]), ent_embs,
-                                 rel_embs)  # [batch_size, num_entity]
+        head_score = \
+            model.score(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,
+                        rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
         head_rank = calculate_rank(head_score, h, kg.filter_dict[(-1, r, t)])
         rank_list.append(head_rank)
-        tail_score = model.score(torch.tensor([[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]), ent_embs,
-                                 rel_embs)  # [batch_size, num_entity]
+        tail_score = \
+            model.score(torch.tensor([[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]).cuda(), ent_embs,
+                        rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
         tail_rank = calculate_rank(tail_score, r, kg.filter_dict[(h, r, -1)])
         rank_list.append(tail_rank)
     rank_list = np.array(rank_list)

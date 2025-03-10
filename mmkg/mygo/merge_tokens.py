@@ -68,7 +68,7 @@ def get_entity_visual_tokens(dataset, max_num, type='beit'):
         else:
             ent_id2tkns.append([token_size - 1] * max_num)
             ent_key_mask.append(([True] * max_num))
-    return torch.LongTensor(ent_id2tkns).cuda(1), torch.BoolTensor(ent_key_mask).cuda(1)
+    return torch.LongTensor(ent_id2tkns).cuda(), torch.BoolTensor(ent_key_mask).cuda()
 
 
 def get_entity_textual_tokens(dataset, max_num, type='bert'):
@@ -101,17 +101,18 @@ def get_entity_textual_tokens(dataset, max_num, type='bert'):
     ent_id2tkns = []
     ent_key_mask = []
     for i in range(len(ent2id)):
-        if ent_id2tkn[i] != []:
+        if len(ent_id2tkn[i]) == max_num:
             ent_id2tkns.append(ent_id2tkn[i])
             ent_key_mask.append(([False] * max_num))
         else:
-            ent_id2tkns.append([token_size - 1] * max_num)
-            ent_key_mask.append(([True] * max_num))
-    return torch.LongTensor(ent_id2tkns).cuda(1), torch.BoolTensor(ent_key_mask).cuda(1)
+            s = ent_id2tkn[i]
+            ent_id2tkns.append(s + [14999] * (max_num - len(s)))
+            ent_key_mask.append(([False] * len(s) + [True] * (max_num - len(s))))
+    return torch.LongTensor(ent_id2tkns).cuda(), torch.BoolTensor(ent_key_mask).cuda()
 
 
 if __name__ == '__main__':
     visual_token = get_entity_visual_tokens('MKG-W', max_num=8)
     print(visual_token)
-    textual_token = get_entity_textual_tokens('MKG-W', max_num=4)
+    textual_token = get_entity_textual_tokens('MKG-W', max_num=8)
     print(textual_token)
