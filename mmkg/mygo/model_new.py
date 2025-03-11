@@ -5,8 +5,8 @@ from torch import nn
 class Tucker(nn.Module):
     def __init__(self, e_dim, r_dim):
         super(Tucker, self).__init__()
-        self.e_dim = e_dim
-        self.r_dim = r_dim
+        # self.e_dim = e_dim
+        # self.r_dim = r_dim
         self.W = nn.Parameter(torch.rand(r_dim, e_dim, e_dim))  # [r_dim, e_dim, e_dim]
         nn.init.xavier_uniform_(self.W.data)
         self.bn0 = nn.BatchNorm1d(e_dim)

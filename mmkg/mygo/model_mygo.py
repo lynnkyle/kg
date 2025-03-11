@@ -12,7 +12,7 @@ class MyGo(nn.Module):
                  num_layer_enc_rel, num_layer_dec,
                  dropout=0.1, str_dropout=0.6,
                  visual_dropout=0.1, textual_dropout=0.1,
-                 score_function='tucker'):
+                 score_function=None):
         super(MyGo, self).__init__()
         self.num_ent = num_ent
         self.num_rel = num_rel
@@ -144,8 +144,8 @@ class MyGo(nn.Module):
         ctx_out = triple_out[
             triples == self.num_ent + self.num_rel]  # [batch_size, 1, str_dim] -> [batch_size, str_dim] 降维
         if self.score_function == 'tucker':
-            score = torch.mm(self.tucker_decoder(ctx_out, rel_out),
-                             emb_ent[:-1].transpose(1, 0))  # [batch_size, num_entity]
+            tucker_emb = self.tucker_decoder(ctx_out, rel_out)
+            score = torch.mm(tucker_emb, emb_ent[:-1].transpose(1, 0))  # [batch_size, num_entity]
         else:
             score = torch.inner(ctx_out, emb_ent[:-1])  # [batch_size, num_entity, 1] -> [batch_size, num_entity] 降维
         return score

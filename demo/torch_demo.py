@@ -1,7 +1,4 @@
 import torch
-
-from main import model
-
 # 1.返回张量中所有非零元素的索引
 x = torch.randint(low=0, high=2, size=(3, 3))
 print(x)
@@ -135,22 +132,22 @@ print(x)
 y = torch.full((4, 3), False)
 print(y)
 
-# 15. 学习率调度器
-# 1). WarmRestarts余弦退火
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
-
-optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
-scheduler = CosineAnnealingWarmRestarts(optimizer, 50, 2, eta_min=0.0001)
-
-# 16. 梯度裁剪器
-x = nn.Parameter(torch.tensor([[1, 2], [3, 4]], dtype=torch.float), requires_grad=True)
-torch.nn.utils.clip_grad_norm_(x, 2)
-
-# 17. default_collate
-from torch.utils.data.dataloader import default_collate
-
-res = default_collate([(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)])
-print(res)
+# # 15. 学习率调度器
+# # 1). WarmRestarts余弦退火
+# from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+#
+# optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+# scheduler = CosineAnnealingWarmRestarts(optimizer, 50, 2, eta_min=0.0001)
+#
+# # 16. 梯度裁剪器
+# x = nn.Parameter(torch.tensor([[1, 2], [3, 4]], dtype=torch.float), requires_grad=True)
+# torch.nn.utils.clip_grad_norm_(x, 2)
+#
+# # 17. default_collate
+# from torch.utils.data.dataloader import default_collate
+#
+# res = default_collate([(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)])
+# print(res)
 
 # 18 torch.max
 x = torch.tensor([[3, 424, 24, 2], [32, 323, 4, 2]])
@@ -170,7 +167,7 @@ print(z.shape)  # shape: [1, num_ent, str_dim]
 """
     方式二:
     python基本数据类型与tensor数据类型进行加法
-    返回tensor数据类型    
+    返回tensor数据类型
 """
 x = torch.tensor([10])
 y = 13
@@ -217,3 +214,12 @@ print(x.numel())
 x = torch.tensor([[1, 2, 3], [4, 5, 6], [4, 5, 6]]).cuda()
 index = torch.tensor([0, 1])
 print(x[index])
+
+# 26. bn
+from torch import nn
+
+x = torch.randn(2048, 256)
+bn1 = nn.BatchNorm1d(256)
+bn2 = nn.BatchNorm1d(256)
+print(bn1(x))
+print(bn2(x))

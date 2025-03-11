@@ -41,7 +41,6 @@ parser.add_argument("--no_write", action='store_true')
 parser.add_argument('--str_dropout', default=0.6, type=float)
 parser.add_argument('--visual_dropout', default=0.3, type=float)
 parser.add_argument('--textual_dropout', default=0.1, type=float)
-parser.add_argument('--fgcl_weight', default=0.01, type=float)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--mu', default=0.01, type=float)
 # Transformer的配置
@@ -90,7 +89,7 @@ model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visua
              visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
              dim_hid=args.dim_hid, num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
              num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
-             visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout).to(device=args.device)
+             visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout).cuda()
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
 
@@ -105,9 +104,9 @@ def train_one_epoch(model, optimizer):
     loss_fn = torch.nn.CrossEntropyLoss()
     for batch, label in tqdm(kg_loader):
         ent_embs, rel_embs = model()
-        score = model.score(batch, ent_embs, rel_embs)
+        score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
-        if args.fgcl_weight != 0:
+        if args.mu != 0:
             loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
         total_loss += loss.item()
         optimizer.zero_grad()
@@ -119,7 +118,6 @@ def train_one_epoch(model, optimizer):
 
 @torch.no_grad()
 def valid_eval_metric(valid_or_test):
-    model.eval()
     rank_list = []
     for triple in tqdm(valid_or_test):
         h, r, t = triple
@@ -145,6 +143,7 @@ for epoch in range(args.num_epoch):
     lr_scheduler.step()
     logger.info(f'Epoch {epoch + 1}/{args.num_epoch}, Loss: {loss:.4f}')
     if (epoch + 1) % args.valid_epoch == 0:
+        model.eval()
         mr, mrr, hit10, hit3, hit1 = valid_eval_metric(valid_or_test=kg.valid)
         logger.info("Entity Prediction on Valid Set")
         logger.info(f"MR: {mr}")
@@ -152,6 +151,7 @@ for epoch in range(args.num_epoch):
         logger.info(f"Hit10: {hit10}")
         logger.info(f"Hit3: {hit3}")
         logger.info(f"Hit1: {hit1}")
+        model.eval()
         mr, mrr, hit10, hit3, hit1 = valid_eval_metric(valid_or_test=kg.test)
         logger.info("Entity Prediction on Test Set")
         logger.info(f"MR: {mr}")
