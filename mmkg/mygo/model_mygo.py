@@ -31,6 +31,7 @@ class MyGo(nn.Module):
             textual_tokens = torch.load("tokens/textual_roberta.pth")
         else:
             raise NotImplementedError
+
         self.visual_token_index = visual_token_index
         self.visual_token_embed = nn.Embedding.from_pretrained(visual_tokens).requires_grad_(False)
         self.textual_token_index = textual_token_index
@@ -55,15 +56,13 @@ class MyGo(nn.Module):
         self.lp_token = nn.Parameter(torch.Tensor(1, str_dim))
 
         self.str_ln = nn.LayerNorm(str_dim)
+        self.str_rel_ln = nn.LayerNorm(str_dim)
         self.visual_ln = nn.LayerNorm(str_dim)
         self.textual_ln = nn.LayerNorm(str_dim)
 
         self.str_drop = nn.Dropout(str_dropout)
         self.visual_drop = nn.Dropout(visual_dropout)
         self.textual_drop = nn.Dropout(textual_dropout)
-
-        self.proj_ent_visual = nn.Linear(self.visual_dim, self.str_dim)
-        self.proj_ent_textual = nn.Linear(self.textual_dim, self.str_dim)
 
         self.pos_str_ent = nn.Parameter(torch.Tensor(1, 1, str_dim))
         self.pos_visual_ent = nn.Parameter(torch.Tensor(1, 1, str_dim))
@@ -74,6 +73,9 @@ class MyGo(nn.Module):
         self.pos_head = nn.Parameter(torch.Tensor(1, 1, str_dim))
         self.pos_rel = nn.Parameter(torch.Tensor(1, 1, str_dim))
         self.pos_tail = nn.Parameter(torch.Tensor(1, 1, str_dim))
+
+        self.proj_ent_visual = nn.Linear(self.visual_dim, self.str_dim)
+        self.proj_ent_textual = nn.Linear(self.textual_dim, self.str_dim)
 
         ent_encoder_layer = nn.TransformerEncoderLayer(d_model=str_dim, nhead=num_head, dim_feedforward=dim_hid,
                                                        dropout=dropout, batch_first=True)
@@ -115,7 +117,7 @@ class MyGo(nn.Module):
 
     def forward(self):
         ent_token = self.ent_token.tile(self.num_ent, 1, 1)
-        rep_ent_str = self.str_drop(self.str_ln(ent_token)) + self.pos_str_ent
+        rep_ent_str = self.str_drop(self.str_ln(self.ent_emb)) + self.pos_str_ent
         ent_visual_token = self.visual_token_embed(self.visual_token_index)
         rep_ent_visual = self.visual_drop(self.visual_ln(self.proj_ent_visual(ent_visual_token))) + self.pos_visual_ent
         ent_textual_token = self.textual_token_embed(self.textual_token_index)

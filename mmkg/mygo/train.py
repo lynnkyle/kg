@@ -34,7 +34,7 @@ parser.add_argument('--data', type=str, default='MKG-W')
 parser.add_argument('--batch_size', type=int, default=2048)
 parser.add_argument('--model', type=str, default='MyGo')
 parser.add_argument('--device', type=str, default='cuda:1')
-parser.add_argument('--num_epoch', type=int, default=100)
+parser.add_argument('--num_epoch', type=int, default=1500)
 parser.add_argument('--valid_epoch', type=int, default=1)
 parser.add_argument('--str_dim', default=256, type=int)
 parser.add_argument("--no_write", action='store_true')
@@ -42,7 +42,7 @@ parser.add_argument('--str_dropout', default=0.6, type=float)
 parser.add_argument('--visual_dropout', default=0.3, type=float)
 parser.add_argument('--textual_dropout', default=0.1, type=float)
 parser.add_argument('--fgcl_weight', default=0.01, type=float)
-parser.add_argument('--lr', default=1e-4, type=float)
+parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--mu', default=0.01, type=float)
 # Transformer的配置
 parser.add_argument('--num_head', default=2, type=int)
@@ -84,7 +84,7 @@ kg_loader = torch.utils.data.DataLoader(kg, batch_size=args.batch_size, shuffle=
     模型要素
 """
 visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=8)
-textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=8)
+textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=4)
 model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
              textual_tokenizer='bert', visual_token_index=visual_token_index, textual_token_index=textual_token_index,
              visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
