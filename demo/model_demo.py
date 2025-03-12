@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.nn import TransformerEncoderLayer
+from torch.nn import TransformerEncoderLayer, TransformerEncoder
 
 # 1. Transformer
 """
@@ -46,3 +46,23 @@ encoder = TransformerEncoderLayer(d_model=16, nhead=4, batch_first=True)
 y = encoder(x)[:, 0]
 print(y.shape)  # shape: [10, 16]
 print(x[:, 0].shape)  # shape: [10, 16]
+
+"""
+    实验四:
+    在model.train模式下, dropout会影响代码复现
+"""
+# random.seed(0)
+# np.random.seed(0)
+torch.manual_seed(0)
+torch.set_num_threads(8)
+torch.cuda.manual_seed_all(0)
+torch.cuda.empty_cache()
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+x = torch.randn((10, 3, 256))
+encoder_layer = TransformerEncoderLayer(d_model=256, nhead=2, dim_feedforward=1024, dropout=0.01, batch_first=True)
+encoder_1 = TransformerEncoder(encoder_layer, num_layers=1)
+# encoder_1.eval()
+print(encoder_1(x))
+print(encoder_1(x))
+
