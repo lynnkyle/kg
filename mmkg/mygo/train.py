@@ -10,7 +10,7 @@ from torch import nn
 import logging
 
 from dataset import VTKG
-from model_mygo import MyGO
+from model_mygo import MyGo
 from merge_tokens import get_entity_visual_tokens, get_entity_textual_tokens
 from utils import calculate_rank, metrics
 
@@ -86,31 +86,12 @@ kg_loader = torch.utils.data.DataLoader(kg, batch_size=args.batch_size, shuffle=
 """
 visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=8)
 textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=4)
-# model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
-#              textual_tokenizer='bert', visual_token_index=visual_token_index, textual_token_index=textual_token_index,
-#              visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
-#              dim_hid=args.dim_hid, num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
-#              num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
-#              visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout).cuda()
-model = MyGO(
-    num_ent=kg.num_ent,
-    num_rel=kg.num_rel,
-    ent_vis_mask=visual_ent_mask,
-    ent_txt_mask=textual_ent_mask,
-    dim_str=args.str_dim,
-    num_head=args.num_head,
-    dim_hid=args.dim_hid,
-    num_layer_enc_ent=args.num_layer_enc_ent,
-    num_layer_enc_rel=args.num_layer_enc_rel,
-    num_layer_dec=args.num_layer_dec,
-    dropout=args.dropout,
-    emb_dropout=args.str_dropout,
-    vis_dropout=args.visual_dropout,
-    txt_dropout=args.textual_dropout,
-    visual_token_index=visual_token_index,
-    text_token_index=textual_token_index,
-    score_function=None
-).cuda()
+model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
+             textual_tokenizer='bert', visual_token_index=visual_token_index, textual_token_index=textual_token_index,
+             visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
+             dim_hid=args.dim_hid, num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
+             num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
+             visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout, score_function='tucker').cuda()
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
 
@@ -140,9 +121,9 @@ def train_one_epoch(model, optimizer):
 @torch.no_grad()
 def valid_eval_metric(valid_or_test):
     rank_list = []
+    ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
     for triple in tqdm(valid_or_test):
         h, r, t = triple
-        ent_embs, rel_embs = model()
         head_score = \
             model.score(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,
                         rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
@@ -151,7 +132,7 @@ def valid_eval_metric(valid_or_test):
         tail_score = \
             model.score(torch.tensor([[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]).cuda(), ent_embs,
                         rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
-        tail_rank = calculate_rank(tail_score, r, kg.filter_dict[(h, r, -1)])
+        tail_rank = calculate_rank(tail_score, t, kg.filter_dict[(h, r, -1)])
         rank_list.append(tail_rank)
     rank_list = np.array(rank_list)
     mr, mrr, hit10, hit3, hit1 = metrics(rank_list)
