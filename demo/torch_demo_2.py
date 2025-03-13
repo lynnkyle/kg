@@ -18,3 +18,13 @@ y = nn.Embedding.from_pretrained(x).requires_grad_(False)
 z = nn.Parameter(x, requires_grad=False)
 print(y(torch.tensor([0, 2, 4, 6])))
 print(z[[0, 2, 4, 6]])
+
+# 3. torch.stack [!!!important 先新增维度再进行堆叠]
+x = torch.tensor([[0, 1, 2], [3, 4, 5]])  # [2, 3]
+y = torch.tensor([[4, 5, 6], [7, 8, 9]])  # [2, 3]
+z = torch.stack((x, y), dim=0)  # [2,2,3]
+print(z)
+z = torch.stack((x, y), dim=1)  # [2,2,3]
+print(z)
+z = torch.stack((x, y), dim=2)  # [3,3,2]
+print(z)

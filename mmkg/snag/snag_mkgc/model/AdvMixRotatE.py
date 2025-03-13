@@ -13,12 +13,19 @@ class AdvMixRotatE(nn.Module):
         self.args = args
         self.margin = margin
         self.epsilon = epsilon
-        self.ent_dim = dim
-        self.rel_dim = dim * 2
+        self.ent_str_dim = dim
+        self.rel_str_dim = dim * 2
         self.ent_emb = nn.Embedding(num_ent, self.ent_dim)
         self.rel_emb = nn.Embedding(num_rel, self.rel_dim)
         self.vis_emb = nn.Embedding.from_pretrained(vis_emb).requires_grad_(False)
         self.txt_emb = nn.Embedding.from_pretrained(txt_emb).requires_grad_(False)
+        self.vis_dim = vis_emb.shape[1]
+        self.txt_dim = txt_emb.shape[1]
+        self.vis_proj_1 = nn.Linear(self.vis_dim, self.ent_str_dim)
+        self.txt_proj_1 = nn.Linear(self.txt_dim, self.ent_str_dim)
+        self.vis_proj_2 = nn.Linear(self.ent_str_dim, self.ent_str_dim)
+        self.txt_proj_2 = nn.Linear(self.ent_str_dim, self.ent_str_dim)
+        self.fusion_layer = nn.ModuleList([BertLayer(args) for _ in range(args.num_hidden_layers)])
         """
             只适用于DB15K数据集
         """
@@ -28,6 +35,9 @@ class AdvMixRotatE(nn.Module):
         self.txt_std = torch.std(txt_emb, dim=0)
 
     def forward(self, triples):
+        """
+            noise_update: epoch - 噪声在每个epoch阶段进行更新 batch - 噪声在每个batch阶段进行更新
+        """
         h = triples['batch_h']
         t = triples['batch_t']
         r = triples['batch_r']
@@ -44,7 +54,41 @@ class AdvMixRotatE(nn.Module):
                 h_emb_noise = self.update_ent_noise(h_emb, h)
                 t_emb_noise = self.update_ent_noise(t_emb, r)
             else:
-                pass
+                h_txt = self.txt_emb(h)
+                h_txt = self.add_noise_to_embed(h_txt, self.txt_mean, self.txt_std, self.args.noise_ratio)
+                t_txt = self.txt_emb(t)
+                t_txt = self.add_noise_to_embed(t_txt, self.txt_mean, self.txt_std, self.args.noise_ratio)
+                h_vis = self.vis_emb(h)
+                h_vis = self.add_noise_to_embed(h_vis, self.vis_mean, self.vis_std, self.args.noise_ratio)
+                t_vis = self.vis_emb(t)
+                t_vis = self.add_noise_to_embed(t_vis, self.vis_mean, self.vis_std, self.args.noise_ratio)
+                self.ent_mean = torch.mean(self.ent_emb.weight.data, dim=0)
+                self.ent_std = torch.std(self.ent_emb.weight.data, dim=0)
+                h_emb_noise = self.add_noise_to_embed(h, self.ent_mean, self.ent_std, self.args.noise_ratio)
+                t_emb_noise = self.add_noise_to_embed(t, self.ent_mean, self.ent_std, self.args.noise_ratio)
+        else:
+            h_vis = self.vis_emb(h)
+            t_vis = self.vis_emb(t)
+            h_txt = self.txt_emb(h)
+            t_txt = self.txt_emb(t)
+
+        if self.args.num_proj == 2:
+            h_vis_emb = self.vis_proj_2(self.vis_proj_1(h_vis))
+            t_vis_emb = self.vis_proj_2(self.vis_proj_1(t_vis))
+            h_txt_emb = self.txt_proj_2(self.txt_proj_1(h_txt))
+            t_txt_emb = self.txt_proj_2(self.txt_proj_1(t_txt))
+        else:
+            h_vis_emb = self.vis_proj_1(h_vis)
+            t_vis_emb = self.vis_proj_1(t_vis)
+            h_txt_emb = self.txt_proj_1(h_txt)
+            t_txt_emb = self.txt_proj_1(t_txt)
+
+        h_joint = self.get_joint_embeddings()
+        t_joint = self.get_joint_embeddings()
+
+    """
+        高斯噪声适用于epoch阶段
+    """
 
     def update_noise(self):
         txt_noise_weights = self.add_noise_to_embed(self.txt_emb.weight.data.clone(), self.txt_mean, self.txt_std,
@@ -60,13 +104,11 @@ class AdvMixRotatE(nn.Module):
         self.ent_noise = self.ent_mean + self.ent_std * torch.randn_like(self.ent_emb.weight.data)
         self.ent_moise_mask = torch.rand(self.ent_emb.weight.shape[0]) < self.args.noise_ratio
 
-    """
-    """
-
     def update_ent_noise(self, ent_emb, batch):
         noise_mask = self.ent_moise_mask[batch]
         selected_emb = ent_emb[noise_mask]
-        ent_emb[noise_mask] = (1 - self.args.mask_ratio) * selected_emb + self.args.mask_ratio * self.ent_noise[batch][noise_mask]
+        ent_emb[noise_mask] = (1 - self.args.mask_ratio) * selected_emb + self.args.mask_ratio * self.ent_noise[batch][
+            noise_mask]
         return ent_emb
 
     """
@@ -89,3 +131,32 @@ class AdvMixRotatE(nn.Module):
         noise = mean + std * torch.randn_like(selected_emb)  # 高斯噪声满足 N(mean, std)
         emb[noise_mask] = (1 - self.args.mask_ratio) * selected_emb + self.args.mask_ratio * noise
         return emb
+
+    def get_joint_embeddings(self, str_emb, vis_emb, txt_emb):
+        emb = torch.stack((str_emb, vis_emb, txt_emb), dim=1)
+        u = torch.tanh(emb)
+        hidden_states = u
+
+        if 'Mformer' in self.args.joint_way:
+            pass
+        elif 'atten_weight' in self.args.joint_way:
+            pass
+        elif 'learnable_weight' in self.args.joint_way:
+            pass
+        else:
+            pass
+
+        return context_vector
+
+
+class BertSelfAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        assert config.hidden_size % config.num_attention_head == 0
+
+
+class BertLayer(nn.Module):
+    def __init__(self, config):
+        super(BertLayer, self).__init__()
+        self.args = args
+        self.chunk_size_feed_forward = 0

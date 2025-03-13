@@ -128,3 +128,9 @@ ls[2].append(3)
 ls[3].append(4)
 ls[3].append(5)
 print(ls)
+
+# 12
+a = 10
+b = 3
+assert a % b == 0
+print(a % b)
