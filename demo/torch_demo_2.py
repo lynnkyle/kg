@@ -28,3 +28,8 @@ z = torch.stack((x, y), dim=1)  # [2,2,3]
 print(z)
 z = torch.stack((x, y), dim=2)  # [3,3,2]
 print(z)
+
+# 4. torch.nn.functional.softmax
+x = torch.tensor([[1, 1, 1], [2, 2, 2]], dtype=torch.float)
+y = torch.nn.functional.softmax(x, dim=1)
+print(y)

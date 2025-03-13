@@ -1,3 +1,4 @@
+import math
 import torch
 from torch import nn
 
@@ -153,10 +154,82 @@ class BertSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.hidden_size % config.num_attention_head == 0
+        self.num_attention_head = config.num_attention_head
+        self.attention_head_size = int(config.hidden_size / config.num_attention_head)
+        self.all_head_size = self.num_attention_head * self.attention_head_size
+        self.query = nn.Linear(config.hidden_size, self.all_head_size)
+        self.key = nn.Linear(config.hidden_size, self.all_head_size)
+        self.value = nn.Linear(config.hidden_size, self.all_head_size)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, hidden_state, output_attention=False):
+        """
+        :param hidden_state:    [batch_size, seq_len, hidden_size]
+        :param output_attention:
+        :return:
+        """
+        query_layer = self.transpose_for_scores(self.query(hidden_state))
+        # [batch_size, num_attention_head, seq_len, attention_head_size]
+        key_layer = self.transpose_for_scores(self.key(hidden_state))
+        # [batch_size, num_attention_head, seq_len, attention_head_size]
+        value_layer = self.transpose_for_scores(self.value(hidden_state))
+        # [batch_size, num_attention_head, seq_len, attention_head_size]
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        # [batch_size, num_attention_head, seq_len, seq_len]
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        # [batch_size, num_attention_head, seq_len, seq_len]
+        attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+        # [batch_size, num_attention_head, seq_len, seq_len]
+        attention_probs = self.dropout(attention_probs)
+        # [batch_size, num_attention_head, seq_len, seq_len]
+        context_layer = torch.matmul(attention_probs, value_layer)
+        # [batch_size, num_attention_head, seq_len, attention_head_size]
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        # [batch_size, seq_len, num_attention_head, attention_head_size]
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(new_context_layer_shape)
+        # [batch_size, seq_len, all_head_size]
+        output = (context_layer, attention_scores) if output_attention else (context_layer,)
+        return output
+
+    def transpose_for_scores(self, x):
+        """
+        :param x:   [batch_size, seq_len, hidden_size]
+        :return:    [batch_size, num_attention_head, seq_len, attention_head_size]
+        """
+        new_x_shape = x.size()[:-1] + (
+            self.num_attention_head, self.attention_head_size)  # [batch_size, seq_len, hidden_size]
+        x = x.view(new_x_shape)  # [batch_size, seq_len, num_attention_head, attention_head_size]
+        return x.permute(0, 2, 1, 3)  # [batch_size, num_attention_head, seq_len, attention_head_size]
+
+
+class BertSelfOutput(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.layer_norm = nn.LayerNorm(config.hidden_size, eps=1e-12)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, hidden_state, input_tensor):
+        hidden_state = self.dense(hidden_state)
+        hidden_state = self.dropout(hidden_state)
+        hidden_state = self.layer_norm(hidden_state + input_tensor)
+        return hidden_state
+
+
+class BertAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.self_attn = BertSelfAttention(config)
+        self.self_out = BertSelfOutput(config)
+
+    def forward(self, hidden_state, output_attention=False):
+        self_attn_output = self.self_attn(hidden_state, output_attention)
+        self.self_out(self_attn_output[0], hidden_state)
 
 
 class BertLayer(nn.Module):
     def __init__(self, config):
         super(BertLayer, self).__init__()
-        self.args = args
+        self.config = config
         self.chunk_size_feed_forward = 0
