@@ -1,6 +1,7 @@
 import math
 import torch
 from torch import nn
+from transformers.pytorch_utils import apply_chunking_to_forward
 
 
 class AdvMixRotatE(nn.Module):
@@ -138,8 +139,21 @@ class AdvMixRotatE(nn.Module):
         u = torch.tanh(emb)
         hidden_states = u
 
+        """
+            三种特征融合方式: Mformer(mean、 graph、 weight)、 atten_weight、 learnable_weight
+        """
         if 'Mformer' in self.args.joint_way:
-            pass
+            for i, layer_module in enumerate(self.fusion_layers):
+                layer_output = layer_module(hidden_state, output_attention=True)
+                hidden_state = layer_output[0]
+            if 'mean' in self.args.joint_way:
+                context_vector = torch.mean(hidden_state, dim=1)
+            elif 'graph' in self.args.joint_way:
+                context_vector = hidden_state[:, 0, :]
+            elif 'weight' in self.args.joint_way:
+
+            else:
+                raise NotImplementedError
         elif 'atten_weight' in self.args.joint_way:
             pass
         elif 'learnable_weight' in self.args.joint_way:
@@ -211,9 +225,14 @@ class BertSelfOutput(nn.Module):
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, hidden_state, input_tensor):
-        hidden_state = self.dense(hidden_state)
-        hidden_state = self.dropout(hidden_state)
-        hidden_state = self.layer_norm(hidden_state + input_tensor)
+        """
+        :param hidden_state: [batch_size, seq_len, hidden_size]
+        :param input_tensor:
+        :return:
+        """
+        hidden_state = self.dense(hidden_state)  # [batch_size, seq_len, hidden_size]
+        hidden_state = self.dropout(hidden_state)  # [batch_size, seq_len, hidden_size]
+        hidden_state = self.layer_norm(hidden_state + input_tensor)  # [batch_size, seq_len, hidden_size]
         return hidden_state
 
 
@@ -225,11 +244,68 @@ class BertAttention(nn.Module):
 
     def forward(self, hidden_state, output_attention=False):
         self_attn_output = self.self_attn(hidden_state, output_attention)
-        self.self_out(self_attn_output[0], hidden_state)
+        # ([batch_size, seq_len, hidden_size], [batch_size, num_attention_head, seq_len, seq_len])
+        self_out_output = self.self_out(self_attn_output[0], hidden_state)
+        output = (self_out_output,) + self_attn_output[1:]
+        # ([batch_size, seq_len, hidden_size], [batch_size, num_attention_head, seq_len, seq_len])
+        # 保持 BertSelfAttention 的额外输出, 防止信息丢失
+        return output
+
+
+class BertIntermediate(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
+        self.intermediate_act_fn = nn.GELU()
+
+    def forward(self, hidden_state):
+        hidden_state = self.dense(hidden_state)  # [batch_size, seq_len, intermediate_size]
+        hidden_state = self.intermediate_act_fn(hidden_state)  # [batch_size, seq_len, intermediate_size]
+        return hidden_state
+
+
+class BertOutput(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
+        self.layer_norm = nn.LayerNorm(config.hidden_size, eps=1e-12)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, hidden_state, input_tensor):
+        hidden_state = self.dense(hidden_state)  # [batch_size, seq_len, hidden_size]
+        hidden_state = self.dropout(hidden_state)  # [batch_size, seq_len, hidden_size]
+        hidden_state = self.layer_norm(hidden_state + input_tensor)  # [batch_size, seq_len, hidden_size]
+        return hidden_state
 
 
 class BertLayer(nn.Module):
     def __init__(self, config):
         super(BertLayer, self).__init__()
         self.config = config
-        self.chunk_size_feed_forward = 0
+        self.chunk_size_feed_forward = 0  # 划分 seq_len[token数量]
+        self.seq_len_dim = 1
+        self.attn = BertAttention(config)
+        if self.config.use_intermediate:
+            self.intermediate = BertIntermediate(config)
+        self.output = BertOutput(config)
+
+    def forward(self, hidden_state, output_attention=False):
+        self_attn_output = self.attn(hidden_state, output_attention)
+        if not self.config.use_intermediate:
+            return (self_attn_output[0], self_attn_output[1])
+        attn_output = self_attn_output[0]  # [batch_size, seq_len, hidden_size]
+        output = self_attn_output[1]
+        """
+            apply_chunking_to_forward 的主要作用是将输入序列分块，减少每次前向传播时的内存占用，特别是当输入序列非常长时
+        """
+        layer_output = apply_chunking_to_forward(
+            self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attn_output
+        )
+        output = (layer_output, output)
+        return output
+
+    def feed_forward_chunk(self, attention_output):
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+        # ([batch_size, seq_len, hidden_size], [batch_size, num_attention_head, seq_len, seq_len])
+        return layer_output

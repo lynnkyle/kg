@@ -129,8 +129,35 @@ ls[3].append(4)
 ls[3].append(5)
 print(ls)
 
-# 12
+# 12 assert 断言
 a = 10
-b = 3
+b = 2
 assert a % b == 0
 print(a % b)
+
+# 13. isinstance
+ls = [1, 2, 3]
+print(isinstance(ls, list))
+
+# 14. 字典转换为对象
+from torch import nn
+
+ACL2CLS = {
+    'relu': nn.ReLU,
+    'sigmoid': nn.Sigmoid,
+    'tanh': nn.Tanh
+}
+
+from collections import OrderedDict
+
+
+class ClassInstantier(OrderedDict):
+    def __getitem__(self, key):
+        content = super().__getitem__(key)
+        cls, kwargs = content if isinstance(content, tuple) else (content, {})
+        return cls(**kwargs)
+
+
+ACT2FN = ClassInstantier(ACL2CLS)
+relu = ACT2FN['relu']
+print(relu)
