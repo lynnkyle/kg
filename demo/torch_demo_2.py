@@ -48,3 +48,18 @@ print(y.unsqueeze(dim=-1))
 x = torch.randn(10, 128)
 linear = nn.Linear(128, 1)
 print(linear(x))
+
+# 8. norm (dim=0, 按行规约, 不同行相同列维度计算) (dim=1, 按列规约, 不同列相同行维度计算)
+x = torch.tensor([[1, 2, 3], [2, 3, 4]], dtype=torch.float)
+print(x.norm(dim=0))
+print(x.sum(dim=0, keepdim=True))
+
+# 9. flatten
+x = torch.randn(1, 15)
+y = torch.randn(20, 1)
+print(x.shape)
+print(y.shape)
+x = x.flatten()
+y = y.flatten()
+print(x.shape)
+print(y.shape)

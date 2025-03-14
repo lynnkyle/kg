@@ -57,45 +57,45 @@ class AdvMixRotatE(nn.Module):
         r_emb = self.rel_emb(r)
         if self.args.add_noise == 1 and self.img_proj.training:
             if self.args.noise_update == 'epoch':
-                h_txt = self.txt_emb_noise(h)
-                t_txt = self.txt_emb_noise(t)
-                h_vis = self.vis_emb_noise(h)
-                t_vis = self.vis_emb_noise(t)
-                h_emb_noise = self.update_ent_noise(h_emb, h)
-                t_emb_noise = self.update_ent_noise(t_emb, r)
+                h_txt_emb = self.txt_emb_noise(h)
+                t_txt_emb = self.txt_emb_noise(t)
+                h_vis_emb = self.vis_emb_noise(h)
+                t_vis_emb = self.vis_emb_noise(t)
+                h_emb = self.update_ent_noise(h_emb, h)
+                t_emb = self.update_ent_noise(t_emb, r)
             else:
-                h_txt = self.txt_emb(h)
-                h_txt = self.add_noise_to_embed(h_txt, self.txt_mean, self.txt_std, self.args.noise_ratio)
-                t_txt = self.txt_emb(t)
-                t_txt = self.add_noise_to_embed(t_txt, self.txt_mean, self.txt_std, self.args.noise_ratio)
-                h_vis = self.vis_emb(h)
-                h_vis = self.add_noise_to_embed(h_vis, self.vis_mean, self.vis_std, self.args.noise_ratio)
-                t_vis = self.vis_emb(t)
-                t_vis = self.add_noise_to_embed(t_vis, self.vis_mean, self.vis_std, self.args.noise_ratio)
+                h_txt_emb = self.txt_emb(h)
+                h_txt_emb = self.add_noise_to_embed(h_txt_emb, self.txt_mean, self.txt_std, self.args.noise_ratio)
+                t_txt_emb = self.txt_emb(t)
+                t_txt_emb = self.add_noise_to_embed(t_txt_emb, self.txt_mean, self.txt_std, self.args.noise_ratio)
+                h_vis_emb = self.vis_emb(h)
+                h_vis_emb = self.add_noise_to_embed(h_vis_emb, self.vis_mean, self.vis_std, self.args.noise_ratio)
+                t_vis_emb = self.vis_emb(t)
+                t_vis_emb = self.add_noise_to_embed(t_vis_emb, self.vis_mean, self.vis_std, self.args.noise_ratio)
                 self.ent_mean = torch.mean(self.ent_emb.weight.data, dim=0)
                 self.ent_std = torch.std(self.ent_emb.weight.data, dim=0)
-                h_emb_noise = self.add_noise_to_embed(h, self.ent_mean, self.ent_std, self.args.noise_ratio)
-                t_emb_noise = self.add_noise_to_embed(t, self.ent_mean, self.ent_std, self.args.noise_ratio)
+                h_emb = self.add_noise_to_embed(h, self.ent_mean, self.ent_std, self.args.noise_ratio)
+                t_emb = self.add_noise_to_embed(t, self.ent_mean, self.ent_std, self.args.noise_ratio)
         else:
-            h_vis = self.vis_emb(h)
-            t_vis = self.vis_emb(t)
-            h_txt = self.txt_emb(h)
-            t_txt = self.txt_emb(t)
+            h_vis_emb = self.vis_emb(h)
+            t_vis_emb = self.vis_emb(t)
+            h_txt_emb = self.txt_emb(h)
+            t_txt_emb = self.txt_emb(t)
 
         if self.args.num_proj == 2:
-            h_vis_emb = self.vis_proj_2(self.vis_proj_1(h_vis))
-            t_vis_emb = self.vis_proj_2(self.vis_proj_1(t_vis))
-            h_txt_emb = self.txt_proj_2(self.txt_proj_1(h_txt))
-            t_txt_emb = self.txt_proj_2(self.txt_proj_1(t_txt))
+            h_vis_emb = self.vis_proj_2(self.vis_proj_1(h_vis_emb))
+            t_vis_emb = self.vis_proj_2(self.vis_proj_1(t_vis_emb))
+            h_txt_emb = self.txt_proj_2(self.txt_proj_1(h_txt_emb))
+            t_txt_emb = self.txt_proj_2(self.txt_proj_1(t_txt_emb))
         else:
-            h_vis_emb = self.vis_proj_1(h_vis)
-            t_vis_emb = self.vis_proj_1(t_vis)
-            h_txt_emb = self.txt_proj_1(h_txt)
-            t_txt_emb = self.txt_proj_1(t_txt)
+            h_vis_emb = self.vis_proj_1(h_vis_emb)
+            t_vis_emb = self.vis_proj_1(t_vis_emb)
+            h_txt_emb = self.txt_proj_1(h_txt_emb)
+            t_txt_emb = self.txt_proj_1(t_txt_emb)
 
         h_joint = self.get_joint_embeddings(h_emb, h_vis_emb, h_txt_emb)
         t_joint = self.get_joint_embeddings(t_emb, t_vis_emb, t_txt_emb)
-        score = self.margin - self._calc(h_joint, t_joint, r, mode)
+        score = self.margin - self._calc(h_joint, t_joint, r_emb, mode)
         return score
 
     """
@@ -192,20 +192,40 @@ class AdvMixRotatE(nn.Module):
         return context_vector
 
     def _calc(self, h_joint, t_joint, r, mode):
+        """
+        :param h_joint: [batch_size, seq_len, hidden_size]
+        :param t_joint: [batch_size, seq_len, hidden_size]
+        :param r: []
+        :param mode: head_batch
+        :return:
+        """
         pi = 3.14159265358979323846
         re_h, im_h = torch.chunk(h_joint, 2, dim=-1)
         re_t, im_t = torch.chunk(t_joint, 2, dim=-1)
         max_r = torch.max(torch.abs(r), dim=1)
         r = r / (max_r / pi)
         re_r, im_r = torch.cos(r), torch.sin(r)
+        re_h = re_h.view(re_h.shape[0], -1, re_h.shape[-1])
+        # [batch_size, 1, hidden_size]
+        im_h = im_h.view(im_h.shape[0], -1, im_h.shape[-1])
+        # [batch_size, 1, hidden_size]
+        re_t = re_t.view(re_t.shape[0], -1, re_t.shape[-1])
+        # [batch_size, 1, hidden_size]
+        im_t = im_t.view(im_t.shape[0], -1, im_t.shape[-1])
+        # [batch_size, 1, hidden_size]
+        re_r = re_r.view(re_r.shape[0], -1, im_r.shape[-1])
+        # [batch_size, 1, hidden_size]
+        im_r = im_r.view(im_r.shape[0], -1, im_r.shape[-1])
+        # [batch_size, 1, hidden_size]
         if mode == 'head_batch':
-            re = re_t * re_r - im_t * im_r - re_h
-            im = re_t * im_r + im_t * re_r - im_h
+            re = re_t * re_r - im_t * im_r - re_h  # [batch_size, 1, hidden_size]
+            im = re_t * im_r + im_t * re_r - im_h  # [batch_size, 1, hidden_size]
         else:
-            re = re_h * re_r - im_h * im_r - re_t
-            im = re_h * im_r + im_h * re_r - im_t
-        score = torch.stack()
-        return score
+            re = re_h * re_r - im_h * im_r - re_t  # [batch_size, 1, hidden_size]
+            im = re_h * im_r + im_h * re_r - im_t  # [batch_size, 1, hidden_size]
+        score = torch.stack([re, im], dim=0)  # [2, batch_size, 1, hidden_size]
+        score = torch.sum(torch.norm(score, dim=0), dim=-1)  # [batch_size, 1, hidden_size] -> [batch_size, 1]
+        return score.permute(1, 0).flatten()
 
 
 class BertSelfAttention(nn.Module):
