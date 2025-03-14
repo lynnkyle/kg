@@ -1,6 +1,7 @@
 import math
 import torch
 from torch import nn
+from torch import functional as F
 from transformers.pytorch_utils import apply_chunking_to_forward
 
 
@@ -15,8 +16,8 @@ class AdvMixRotatE(nn.Module):
         self.args = args
         self.margin = margin
         self.epsilon = epsilon
-        self.ent_str_dim = dim
-        self.rel_str_dim = dim * 2
+        self.ent_str_dim = dim * 2
+        self.rel_str_dim = dim
         self.ent_emb = nn.Embedding(num_ent, self.ent_dim)
         self.rel_emb = nn.Embedding(num_rel, self.rel_dim)
         self.vis_emb = nn.Embedding.from_pretrained(vis_emb).requires_grad_(False)
@@ -27,7 +28,14 @@ class AdvMixRotatE(nn.Module):
         self.txt_proj_1 = nn.Linear(self.txt_dim, self.ent_str_dim)
         self.vis_proj_2 = nn.Linear(self.ent_str_dim, self.ent_str_dim)
         self.txt_proj_2 = nn.Linear(self.ent_str_dim, self.ent_str_dim)
+        """
+            四种特征融合的方式
+        """
         self.fusion_layer = nn.ModuleList([BertLayer(args) for _ in range(args.num_hidden_layers)])
+        self.ent_attn = nn.Linear(self.ent_str_dim, 1, bias=False)
+        self.ent_attn.requires_grad_(True)
+        self.learnable_weight = nn.Parameter(torch.ones(3, requires_grad=True))
+        self.comb_proj = nn.Linear(self.ent_str_dim * 3, self.ent_str_dim)
         """
             只适用于DB15K数据集
         """
@@ -85,8 +93,10 @@ class AdvMixRotatE(nn.Module):
             h_txt_emb = self.txt_proj_1(h_txt)
             t_txt_emb = self.txt_proj_1(t_txt)
 
-        h_joint = self.get_joint_embeddings()
-        t_joint = self.get_joint_embeddings()
+        h_joint = self.get_joint_embeddings(h_emb, h_vis_emb, h_txt_emb)
+        t_joint = self.get_joint_embeddings(t_emb, t_vis_emb, t_txt_emb)
+        score = self.margin - self._calc(h_joint, t_joint, r, mode)
+        return score
 
     """
         高斯噪声适用于epoch阶段
@@ -135,9 +145,15 @@ class AdvMixRotatE(nn.Module):
         return emb
 
     def get_joint_embeddings(self, str_emb, vis_emb, txt_emb):
-        emb = torch.stack((str_emb, vis_emb, txt_emb), dim=1)
-        u = torch.tanh(emb)
-        hidden_states = u
+        """
+        :param str_emb: [batch_size, hidden_size]
+        :param vis_emb: [batch_size, hidden_size]
+        :param txt_emb: [batch_size, hidden_size]
+        :return:
+        """
+        emb = torch.stack((str_emb, vis_emb, txt_emb), dim=1)  # [batch_size, seq_len, hidden_size]
+        u = torch.tanh(emb)  # [batch_size, seq_len, hidden_size]
+        hidden_state = u  # [batch_size, seq_len, hidden_size]
 
         """
             三种特征融合方式: Mformer(mean、 graph、 weight)、 atten_weight、 learnable_weight
@@ -145,23 +161,51 @@ class AdvMixRotatE(nn.Module):
         if 'Mformer' in self.args.joint_way:
             for i, layer_module in enumerate(self.fusion_layers):
                 layer_output = layer_module(hidden_state, output_attention=True)
-                hidden_state = layer_output[0]
+                hidden_state = layer_output[0]  # [batch_size, seq_len, hidden_size]
             if 'mean' in self.args.joint_way:
-                context_vector = torch.mean(hidden_state, dim=1)
+                context_vector = torch.mean(hidden_state, dim=1)  # [batch_size, hidden_size]
             elif 'graph' in self.args.joint_way:
-                context_vector = hidden_state[:, 0, :]
+                context_vector = hidden_state[:, 0, :]  # [batch_size, hidden_size]
             elif 'weight' in self.args.joint_way:
-
+                # layer_output[1]: [batch_size, num_attention_head, seq_len, seq_len]
+                attention_pro = torch.sum(layer_output[1], dim=-3)
+                # [batch_size, seq_len, seq_len]
+                attention_pro_comb = torch.sum(attention_pro, dim=-2) / math.sqrt(3 * self.args.num_attention_head)
+                # [batch_size, seq_len]
+                attention_weight = F.softmax(attention_pro_comb, dim=-1)
+                # [batch_size, seq_len]
+                context_vector = torch.sum(attention_weight.unsqueeze(-1) * emb, dim=1)
+                # [!!!important]  [batch_size, hidden_size]
             else:
                 raise NotImplementedError
         elif 'atten_weight' in self.args.joint_way:
-            pass
+            attention_pro = self.ent_attn(u).squeeze(-1)  # [batch_size, seq_len, 1] -> [batch_size, seq_len]
+            attention_weight = torch.softmax(attention_pro, dim=-1)  # [batch_size, seq_len]
+            context_vector = torch.sum(attention_weight.unsqueeze(-1) * emb, dim=1)
+            # [!!!important]  [batch_size, hidden_size]
         elif 'learnable_weight' in self.args.joint_way:
-            pass
+            learn_weight = torch.softmax(self.learnable_weight, dim=0)  # [seq_len]
+            context_vector = torch.sum(learn_weight.unsqueeze(0).unsqueeze(-1) * emb, dim=1)
+            # [batch_size, hidden_size]
         else:
-            pass
-
+            context_vector = self.comb_proj(torch.cat((str_emb, vis_emb, txt_emb), dim=1))  # [batch_size, hidden_size]
         return context_vector
+
+    def _calc(self, h_joint, t_joint, r, mode):
+        pi = 3.14159265358979323846
+        re_h, im_h = torch.chunk(h_joint, 2, dim=-1)
+        re_t, im_t = torch.chunk(t_joint, 2, dim=-1)
+        max_r = torch.max(torch.abs(r), dim=1)
+        r = r / (max_r / pi)
+        re_r, im_r = torch.cos(r), torch.sin(r)
+        if mode == 'head_batch':
+            re = re_t * re_r - im_t * im_r - re_h
+            im = re_t * im_r + im_t * re_r - im_h
+        else:
+            re = re_h * re_r - im_h * im_r - re_t
+            im = re_h * im_r + im_h * re_r - im_t
+        score = torch.stack()
+        return score
 
 
 class BertSelfAttention(nn.Module):
