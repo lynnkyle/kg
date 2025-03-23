@@ -49,7 +49,7 @@ class VirEmbGen_vae(nn.Module):
         self.dim = [self.ent_dim, self.args.attr_dim, self.args.attr_dim, self.args.txt_dim, self.args.name_dim]
         hidden_list = [self.args.vis_dim]
 
-        self.vae = VAE(sum(self.dim[:modal_num]), hidden_list, self.args.vis_sim)
+        self.vae = VAE(sum(self.dim[:modal_num]), hidden_list, self.args.vis_dim)
 
     def forward(self, embs):
         embs = [embs[idx] for idx in range(len(embs)) if embs[idx] is not None]
@@ -149,7 +149,7 @@ class SpecialSpmmFunction(torch.autograd.Function):
     def forward(ctx, indices, values, shape, b):
         assert indices.requires_grad is False
         a = torch.sparse_coo_tensor(indices, values, shape)
-        ctx.save_for_forward(a, b)
+        ctx.save_for_backward(a, b)
         ctx.N = shape[0]
         return torch.matmul(a, b)
 
