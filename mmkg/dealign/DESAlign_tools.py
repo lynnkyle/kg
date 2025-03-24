@@ -49,7 +49,7 @@ class VirEmbGen_vae(nn.Module):
         self.dim = [self.ent_dim, self.args.attr_dim, self.args.attr_dim, self.args.txt_dim, self.args.name_dim]
         hidden_list = [self.args.vis_dim]
 
-        self.vae = VAE(sum(self.dim[:modal_num]), hidden_list, self.args.vis_sim)
+        self.vae = VAE(sum(self.dim[:modal_num]), hidden_list, self.args.vis_dim)
 
     def forward(self, embs):
         embs = [embs[idx] for idx in range(len(embs)) if embs[idx] is not None]
@@ -137,45 +137,56 @@ class MultiHeadGraphAttention(nn.Module):
         self.attn_dropout = attn_dropout
         self.leaky_relu = nn.LeakyReLU()
         self.special_spmm = SpecialSpmm()
-        self.src_dst = nn.Parameter(torch.Tensor(n_head, feat_out * 2, 1))
-        self.diag = diag
-        if self.diag:
-            self.w = nn.Parameter(torch.Tensor(n_head, 1, feat_out))
-        else:
-            self.w = nn.Parameter(torch.Tensor(n_head, feat_in, feat_out))
-        if self.bias:
-            self.bias = nn.Parameter(torch.Tensor(feat_out))
-            nn.init.constant_(self.bias, 0)
-        else:
-            self.register_parameter('bias', None)
-        if init is not None and diag:
-            pass
-        else:
-            nn.init.xavier_uniform_(self.w)
-            nn.init.xavier_uniform_(self.bias)
 
 
 class SpecialSpmm(nn.Module):
-    def forward(self, indices, values, sizes, b):
-        return SpecialSpmmFunction.apply(indices, values, sizes, b)
+    def forward(self):
+        return SpecialSpmm()
 
 
 class SpecialSpmmFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, indices, values, sizes, b):
+    def forward(ctx, indices, values, shape, b):
         assert indices.requires_grad is False
-        a = torch.sparse_coo_tensor(indices, values, sizes)
+        a = torch.sparse_coo_tensor(indices, values, shape)
         ctx.save_for_backward(a, b)
-        ctx.N = sizes[0]
+        ctx.N = shape[0]
         return torch.matmul(a, b)
 
     @staticmethod
     def backward(ctx, grad_output):
         a, b = ctx.saved_tensors
+        grad_values = grad_b = None
         if ctx.needs_input_grad[1]:
             grad_a_dense = grad_output.matmul(b.t())
             edge_idx = a._indices()[0, :] * ctx.N + a._indices()[1, :]
             grad_values = grad_a_dense.view(-1)[edge_idx]
         if ctx.needs_input_grad[3]:
-            grad_b = grad_output.matmul(a.t())
+            grad_b = a.t().matmul(grad_output)
         return None, grad_values, None, grad_b
+
+
+class SpecialSpmm(torch.nn.Module):
+    def forward(self, indices, values, shape, b):
+        return SpecialSpmmFunction.apply(indices, values, shape, b)
+
+
+if __name__ == '__main__':
+    # 创建测试数据
+    indices = torch.tensor([[0, 1, 1], [2, 0, 2]])  # 稀疏矩阵的索引
+    values = torch.tensor([3.0, 4.0, 5.0], requires_grad=True)  # 稀疏矩阵的值
+    shape = (3, 3)  # 稀疏矩阵的形状
+    b = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]], requires_grad=True)  # 乘法右侧的稠密矩阵
+
+    # 实例化 SpecialSpmm 并计算前向传播
+    spmm = SpecialSpmm()
+    output = spmm(indices, values, shape, b)
+
+    # 计算反向传播
+    loss = output.sum()  # 构造损失函数
+    loss.backward()
+
+    # 打印结果
+    print("Output:\n", output)
+    print("Grad of values:", values.grad)
+    print("Grad of b:\n", b.grad)
