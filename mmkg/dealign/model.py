@@ -74,24 +74,61 @@ class GraphConvolution(nn.Module):
 
 
 class MultiHeadGraphAttention(nn.Module):
-    def __init__(self, in_features, out_features):
+    def __init__(self, n_head, in_feat, out_feat, attn_drop, diag=True, init=None, bias=False):
         super().__init__()
-        pass
+        self.n_head = n_head
+        self.in_feat = in_feat
+        self.out_feat = out_feat
+        self.attn_drop = attn_drop
+        self.diag = diag
+        self.attn = nn.Parameter(torch.Tensor(n_head, out_feat * 2, 1))  # 注意力参数 [n_head, out_feat * 2, 1]
+        if self.diag:  # 逐元素缩放
+            self.w = nn.Parameter(torch.FloatTensor(n_head, 1, out_feat))
+        else:  # 线性变换
+            self.w = nn.Parameter(torch.FloatTensor(n_head, in_feat, out_feat))
+        self.leaky_relu = nn.LeakyReLU(negative_slope=0.2)
+        self.special_spmm = SpecialSpmm()
 
     def forward(self, x, adj):
-        pass
+        """
+        :param x:   [ent_num, emb_dim]
+        :param adj:     [ent_num, ent_num]
+        emb_dim == in_feat
+        :return:
+        """
+        for i in range(self.n_head):
+            N = x.size()[0]
+            edge = adj._indices()
+            if self.diag:
+                h = torch.mul(x, self.w[i])  # [ent_num, emb_dim] [1, out_feat] => [ent_num, out_feat]
+            else:
+                h = torch.mm(x, self.w[i])  # [ent_num, emb_dim] [in_feat, out_feat] => [ent_num, out_feat]
+
+            edge_h = torch.cat((h[edge[0, :], :], h[edge[1, :], :]), dim=1)  # [edge_num, out_feat * 2]
+            edge_e = torch.exp(-self.leaky_relu(torch.mm(edge_h, self.attn[i])))  # [edge_num, 1]
+            e_row_sum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones(size=(N, 1)))
+            # [2, edge_num] [edge_num,] [N, N], [N,1] =>  [ent_num, 1]
+            edge_e = F.dropout(edge_e, self.attn_drop, training=self.training)
+
+            h_prime = self.special_spmm()
+            h_prime = torch.div(h_prime, e_row_sum)
+
+        if self.bias is not None:
+            return output + self.bias
+        else:
+            return output
 
 
 class SpecialSpmm(nn.Module):
     def forward(self, indices, values, shapes, b):
-        pass
+        return SpecialSpmmFunction.apply(indices, values, shapes, b)
 
 
 class SpecialSpmmFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, indices, values, shapes, b):
         assert indices.requires_grad is False
-        a = torch.sparse_coo_tensor(indices, values)
+        a = torch.sparse_coo_tensor(indices, values, shapes)
         ctx.save_for_backward(a, b)
         ctx.N = shapes[0]
         return torch.matmul(a, b)
@@ -102,9 +139,8 @@ class SpecialSpmmFunction(torch.autograd.Function):
         grad_values = grad_b = None
         if ctx.needs_input_grad[1]:
             grad_a = torch.matmul(grad_output, b.t())
-            grad_values = torch.mm()
-
+            idx = a._indices()[0, :] * ctx.N + a._indices()[1, :]
+            grad_values = grad_a.view(-1)[idx]
         if ctx.needs_input_grad[3]:
             grad_b = torch.matmul(grad_output, a.t())
-
-        return grad_values, grad_b, None, None
+        return None, grad_values, None, grad_b
