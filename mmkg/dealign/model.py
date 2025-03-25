@@ -4,6 +4,7 @@ import math
 import torch
 from torch import nn
 import torch.nn.functional as F
+from transformers.pytorch_utils import apply_chunking_to_forward
 
 
 class VAE(nn.Module):
@@ -169,33 +170,151 @@ class ProjectionHead(nn.Module):
             return x
 
 
+"""
+    Transformer中, Dropout之后再LayerNorm的顺序, 会使得数据更稳定
+"""
+
+
 class BertSelfAttention(nn.Module):
     """
         多头: 多对q k v 参数
     """
 
-    def __init__(self, num_attn_head, in_feat, out_feat):
+    def __init__(self, num_attn_head, hidden_size, dropout=0.1):
         super().__init__()
         self.num_attn_head = num_attn_head
-        assert in_feat % num_attn_head == 0
-        self.in_feat = in_feat // self.num_head
-        self.attn_head_size = int(in_feat / num_attn_head)
+        assert hidden_size % num_attn_head == 0
+        self.hidden_size = hidden_size // self.num_head
+        self.attn_head_size = int(hidden_size / num_attn_head)
         self.all_head_size = self.num_head * self.attn_head_size
-        self.q = nn.Linear(self.in_feat, self.all_head_size)
-        self.k = nn.Linear(self.in_feat, self.all_head_size)
-        self.v = nn.Linear(self.in_feat, self.all_head_size)
+        self.q = nn.Linear(self.hidden_size, self.all_head_size)
+        self.k = nn.Linear(self.hidden_size, self.all_head_size)
+        self.v = nn.Linear(self.hidden_size, self.all_head_size)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, hidden_state, output_attention=False):
-        query_layer = self.q(hidden_state)
-        key_layer = self.k(hidden_state)
-        value_layer = self.v(hidden_state)
+        """
+        :param hidden_state:    [batch_size, seq_len, hidden_size]
+        :param output_attention:
+        :return:    [batch_size, seq_len, all_head_size]
+        """
+        query_layer = self.multi_transpose(self.q(hidden_state))  # [batch_size, num_attn_head, seq_len, attn_head_size]
+        key_layer = self.multi_transpose(self.k(hidden_state))  # [batch_size, num_attn_head, seq_len, attn_head_size]
+        value_layer = self.multi_transpose(self.v(hidden_state))  # [batch_size, num_attn_head, seq_len, attn_head_size]
+        attn_weight = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        # [batch_size, num_attn_head, seq_len, seq_len]
+        attn_weight = attn_weight / math.sqrt(self.attn_head_size)
+        # [batch_size, num_attn_head, seq_len, seq_len]
+        attn_weight = nn.functional.softmax(attn_weight, dim=-1)
+        # [batch_size, num_attn_head, seq_len, seq_len]
+        attn_weight_dp = self.dropout(attn_weight)
+        # [batch_size, num_attn_head, seq_len, seq_len]
+        context_layer = torch.matmul(attn_weight_dp, value_layer)
+        # [batch_size, num_attn_head, seq_len, attn_head_size]
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        # [batch_size, seq_len, num_attn_head, attn_head_size]
+        context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        # [batch_size, seq_len, all_head_size]
+        context_layer = context_layer.view(context_layer_shape)
+        # [batch_size, seq_len, all_head_size]
+        if output_attention:
+            return (context_layer, attn_weight)
+        else:
+            return (context_layer,)
 
-    def transpose(self, x):
+    def multi_transpose(self, x):
         """
         :param x: [batch_size, seq_len, hidden_size]
         :return:
         """
         shape = x.size()[:-1] + (self.num_attn_head, self.attn_head_size)
         x = x.view(shape)  # [batch_size, seq_len, num_attn_head, attn_head_size]
-        x = x.permute()
+        x = x.permute(0, 2, 1, 3)  # [batch_size, num_attn_head, seq_len, attn_head_size]
         return x
+
+
+class BerSelfOutput(nn.Module):
+    """
+        自注意力投影层
+    """
+
+    def __init__(self, hidden_size, dropout=0.1):
+        super().__init__()
+        self.linear = nn.Linear(hidden_size, hidden_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, hidden_state, x):
+        hidden_state = self.linear(hidden_state)
+        hidden_state = self.dropout(hidden_state)
+        hidden_state = self.layer_norm(x + hidden_state)
+        return hidden_state
+
+
+class BertAttention(nn.Module):
+    def __init__(self, num_attn_head, hidden_size, dropout=0.1):
+        super().__init__()
+        self.self_attn = BertSelfAttention(num_attn_head=num_attn_head, hidden_size=hidden_size, dropout=dropout)
+        self.self_output = BerSelfOutput(hidden_size=hidden_size, dropout=dropout)
+
+    def forward(self, x, output_attention=False):
+        self_attn_output = self.self_attn(x, output_attention)
+        self_out_output = self.self_output(self_attn_output[0], x)
+        output = (self_out_output,) + self_attn_output[1:]
+        return output
+
+
+class BertIntermediate(nn.Module):
+    def __init__(self, hidden_size, intermediate_size):
+        super().__init__()
+        self.linear = nn.Linear(hidden_size, intermediate_size)
+        self.gelu = nn.GELU()
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.gelu(x)
+        return x
+
+
+class BertOutput(nn.Module):
+    def __init__(self, hidden_size, intermediate_size, dropout=0.1):
+        super().__init__()
+        self.linear = nn.Linear(intermediate_size, hidden_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, hidden_state, x):
+        hidden_state = self.linear(hidden_state)
+        hidden_state = self.dropout(hidden_state)
+        hidden_state = self.layer_norm(x + hidden_state)
+        return hidden_state
+
+
+class BertLayer(nn.Module):
+    def __init__(self, num_attn_head, hidden_size, intermediate_size, dropout=0.1, use_intermediate=True):
+        super().__init__()
+        self.seq_len_dim = 1  # 指定seq_len的维度
+        self.chunk_size_feed_forward = 0
+        self.bert_attn = BertAttention(num_attn_head=num_attn_head, hidden_size=hidden_size, dropout=dropout)
+        self.use_intermediate = use_intermediate
+        if use_intermediate:
+            self.intermediate = BertIntermediate(hidden_size=hidden_size, intermediate_size=intermediate_size)
+        self.output = BertOutput(hidden_size=hidden_size, intermediate_size=intermediate_size, dropout=dropout)
+
+    def forward(self, x, output_attention=False):
+        self_attn_output = self.bert_attn(x, output_attention)
+        if not self.use_intermediate:
+            return (self_attn_output[0], self_attn_output[1])
+        attn_output = self_attn_output[0]
+        attn_weight = self_attn_output[1]
+
+        layer_output = apply_chunking_to_forward(
+            self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attn_output
+        )
+        output = (layer_output, attn_weight)
+        return output
+
+    def feed_forward_chunk(self, x):
+        hidden_state = self.intermediate(x)
+        output = self.output(hidden_state, x)
+        return output

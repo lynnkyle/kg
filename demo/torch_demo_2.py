@@ -98,7 +98,7 @@ class SpecialSpmmFunction(torch.autograd.Function):
             edge_idx = a._indices()[0, :] * ctx.N + a._indices()[1, :]
             grad_values = grad_a_dense.view(-1)[edge_idx]
         if ctx.needs_input_grad[3]:
-            grad_b = grad_output.matmul(a.t())
+            grad_b = a.t().matmul(grad_output)
         return None, grad_values, None, grad_b
 
 
@@ -122,8 +122,12 @@ loss = output.sum()
 loss.backward()
 print(output)
 
-# 13. permute
+# 13. torch.permute
 x = torch.randn((3, 1, 4))
 print(x)
 y = torch.permute(x, [1, 0, 2])
 print(y)
+
+# nn.functional.softmax
+x = torch.tensor([[[[1, 1, 1, 1], [2, 2, 2, 2]]]], dtype=torch.float)
+print(nn.functional.softmax(x, dim=-1))

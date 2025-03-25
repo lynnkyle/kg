@@ -161,3 +161,11 @@ class ClassInstantier(OrderedDict):
 ACT2FN = ClassInstantier(ACL2CLS)
 relu = ACT2FN['relu']
 print(relu)
+
+# 15. 元组相加 列表相加
+ls = ['apple']
+tpl = ('apple',)
+ls += ['banana']
+tpl += ('banana',)
+print(ls)
+print(tpl)
