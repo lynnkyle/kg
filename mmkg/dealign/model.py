@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 class VAE(nn.Module):
     def __init__(self, emb_size, hid_size_list, mid_hid):
-        super(VAE, self).__init__()
+        super().__init__()
         self.emb_size = emb_size
         self.hid_size_list = hid_size_list
         self.mid_hid = mid_hid
@@ -47,13 +47,13 @@ class VAE(nn.Module):
 
 
 class GraphConvolution(nn.Module):
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self, in_feat, out_feat, bias=True):
         super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = nn.Parameter(torch.FloatTensor(in_features, out_features))
+        self.in_feat = in_feat
+        self.out_feat = out_feat
+        self.weight = nn.Parameter(torch.FloatTensor(in_feat, out_feat))
         if bias:
-            self.bias = nn.Parameter(torch.FloatTensor(out_features))
+            self.bias = nn.Parameter(torch.FloatTensor(out_feat))
         else:
             self.register_parameter('bias', None)
         self.init_weight()
@@ -74,6 +74,10 @@ class GraphConvolution(nn.Module):
 
 
 class MultiHeadGraphAttention(nn.Module):
+    """
+        多头: 多对注意力参数, 多对线性变换参数
+    """
+
     def __init__(self, n_head, in_feat, out_feat, attn_drop, diag=True, init=None, bias=False):
         super().__init__()
         self.n_head = n_head
@@ -94,8 +98,9 @@ class MultiHeadGraphAttention(nn.Module):
         :param x:   [ent_num, emb_dim]
         :param adj:     [ent_num, ent_num]
         emb_dim == in_feat
-        :return:
+        :return:    [num_head, ent_num, out_feat]
         """
+        output = []
         for i in range(self.n_head):
             N = x.size()[0]
             edge = adj._indices()
@@ -103,16 +108,18 @@ class MultiHeadGraphAttention(nn.Module):
                 h = torch.mul(x, self.w[i])  # [ent_num, emb_dim] [1, out_feat] => [ent_num, out_feat]
             else:
                 h = torch.mm(x, self.w[i])  # [ent_num, emb_dim] [in_feat, out_feat] => [ent_num, out_feat]
-
             edge_h = torch.cat((h[edge[0, :], :], h[edge[1, :], :]), dim=1)  # [edge_num, out_feat * 2]
-            edge_e = torch.exp(-self.leaky_relu(torch.mm(edge_h, self.attn[i])))  # [edge_num, 1]
+            edge_e = torch.exp(-self.leaky_relu(torch.mm(edge_h, self.attn[i])))
+            # [edge_num, 1] [!!!important]计算的是每两个特征向量的权重值
             e_row_sum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones(size=(N, 1)))
-            # [2, edge_num] [edge_num,] [N, N], [N,1] =>  [ent_num, 1]
-            edge_e = F.dropout(edge_e, self.attn_drop, training=self.training)
-
-            h_prime = self.special_spmm()
-            h_prime = torch.div(h_prime, e_row_sum)
-
+            # [2, edge_num] [edge_num,] [N, N], [N,1] => [ent_num, 1]
+            edge_e = F.dropout(edge_e, self.attn_drop)
+            h_prime = self.special_spmm(edge, edge_e, torch.Size([N, N]), h)
+            # [2, edge_num] [edge_num,] [N, N], [ent_num, out_feat] => [ent_num, out_feat]
+            # 权重乘以特征向量
+            h_prime = torch.div(h_prime, e_row_sum)  # [ent_num, out_feat]
+            output.append(h_prime.unsqueeze(0))
+        output = torch.cat(output, dim=0)  # [num_head, ent_num, out_feat]
         if self.bias is not None:
             return output + self.bias
         else:
@@ -131,7 +138,7 @@ class SpecialSpmmFunction(torch.autograd.Function):
         a = torch.sparse_coo_tensor(indices, values, shapes)
         ctx.save_for_backward(a, b)
         ctx.N = shapes[0]
-        return torch.matmul(a, b)
+        return torch.matmul(a, b)  # matmul是矩阵乘法
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -144,3 +151,51 @@ class SpecialSpmmFunction(torch.autograd.Function):
         if ctx.needs_input_grad[3]:
             grad_b = torch.matmul(grad_output, a.t())
         return None, grad_values, None, grad_b
+
+
+class ProjectionHead(nn.Module):
+    def __init__(self, in_feat, out_feat, hid_feat, dropout):
+        super().__init__()
+        self.linear_1 = nn.Linear(in_feat, hid_feat)
+        self.linear_2 = nn.Linear(hid_feat, out_feat)
+        self.dropout = dropout
+
+    def forward(self, x):
+        if x is not None:
+            x = self.linear_1(x)
+            x = F.relu(x)
+            x = F.dropout(x, self.dropout)
+            x = self.linear_2(x)
+            return x
+
+
+class BertSelfAttention(nn.Module):
+    """
+        多头: 多对q k v 参数
+    """
+
+    def __init__(self, num_attn_head, in_feat, out_feat):
+        super().__init__()
+        self.num_attn_head = num_attn_head
+        assert in_feat % num_attn_head == 0
+        self.in_feat = in_feat // self.num_head
+        self.attn_head_size = int(in_feat / num_attn_head)
+        self.all_head_size = self.num_head * self.attn_head_size
+        self.q = nn.Linear(self.in_feat, self.all_head_size)
+        self.k = nn.Linear(self.in_feat, self.all_head_size)
+        self.v = nn.Linear(self.in_feat, self.all_head_size)
+
+    def forward(self, hidden_state, output_attention=False):
+        query_layer = self.q(hidden_state)
+        key_layer = self.k(hidden_state)
+        value_layer = self.v(hidden_state)
+
+    def transpose(self, x):
+        """
+        :param x: [batch_size, seq_len, hidden_size]
+        :return:
+        """
+        shape = x.size()[:-1] + (self.num_attn_head, self.attn_head_size)
+        x = x.view(shape)  # [batch_size, seq_len, num_attn_head, attn_head_size]
+        x = x.permute()
+        return x

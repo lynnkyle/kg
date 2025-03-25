@@ -118,5 +118,12 @@ spmm = SpecialSpmm()
 output = spmm(indices, values, shape, b)
 
 # 对output求和，然后执行backward
-output.sum().backward()
+loss = output.sum()
+loss.backward()
 print(output)
+
+# 13. permute
+x = torch.randn((3, 1, 4))
+print(x)
+y = torch.permute(x, [1, 0, 2])
+print(y)
