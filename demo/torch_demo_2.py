@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 from torch import nn
 
@@ -69,3 +71,59 @@ x = torch.sparse_coo_tensor(indices=[[0, 0, 1, 1], [0, 1, 0, 1]], values=[1, 2, 
 y = torch.tensor([[1, 1, 0], [0, 1, 1], [1, 0, 1]])
 z = torch.sparse.mm(x, y)
 print(z)
+
+# 11. torch.sparse (coo_tensor、 mm)
+x = torch.sparse_coo_tensor(indices=[[0, 0, 1, 1, 2, 2], [0, 1, 1, 2, 0, 2]], values=[1, 2, 5, 6, 7, 9], size=(3, 3))
+y = torch.tensor([[1, 1, 0], [0, 1, 1], [1, 0, 1]], dtype=torch.long)
+z = torch.sparse.mm(x, y)
+print(z)
+
+
+# 12. 稀疏矩阵自定义梯度下降
+class SpecialSpmmFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, indices, values, size, b):
+        assert indices.requires_grad is False
+        a = torch.sparse_coo_tensor(indices, values, size)
+        ctx.save_for_backward(a, b)
+        ctx.N = size[0]
+        return torch.matmul(a, b)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, b = ctx.saved_tensors
+        grad_values = grad_b = None
+        if ctx.needs_input_grad[1]:
+            grad_a_dense = grad_output.matmul(b.t())
+            edge_idx = a._indices()[0, :] * ctx.N + a._indices()[1, :]
+            grad_values = grad_a_dense.view(-1)[edge_idx]
+        if ctx.needs_input_grad[3]:
+            grad_b = grad_output.matmul(a.t())
+        return None, grad_values, None, grad_b
+
+
+class SpecialSpmm(nn.Module):
+    def forward(self, indices, values, shape, b):
+        return SpecialSpmmFunction.apply(indices, values, shape, b)
+
+
+# 示例数据
+indices = torch.tensor([[0, 1], [1, 2]], dtype=torch.long)
+values = torch.tensor([2.0, 3.0], requires_grad=True)
+shape = (3, 3)
+b = torch.randn(3, 2, requires_grad=True)
+
+# 创建并执行前向和反向传播
+spmm = SpecialSpmm()
+output = spmm(indices, values, shape, b)
+
+# 对output求和，然后执行backward
+loss = output.sum()
+loss.backward()
+print(output)
+
+# 13. permute
+x = torch.randn((3, 1, 4))
+print(x)
+y = torch.permute(x, [1, 0, 2])
+print(y)
