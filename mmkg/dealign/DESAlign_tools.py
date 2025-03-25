@@ -129,7 +129,14 @@ class GraphConvolution(nn.Module):
 
 
 class MultiHeadGraphAttention(nn.Module):
-    def __init__(self, n_head, feat_in, feat_out, attn_dropout, diag=True, init=None, bias=False):
+    def __init__(self, n_head, feat_in, feat_out, attn_dropout, diag=True, bias=False):
+        """
+        :param n_head:
+        :param feat_in: feat_in == feat_out
+        :param feat_out: feat_out
+        :param attn_dropout:
+        :param diag:
+        """
         super(MultiHeadGraphAttention, self).__init__()
         self.n_head = n_head
         self.feat_in = feat_in
@@ -137,11 +144,41 @@ class MultiHeadGraphAttention(nn.Module):
         self.attn_dropout = attn_dropout
         self.leaky_relu = nn.LeakyReLU()
         self.special_spmm = SpecialSpmm()
+        self.diag = diag
+        if self.diag:
+            self.weight = nn.Parameter(torch.FloatTensor(n_head, 1, feat_out))
+        else:
+            self.weight = nn.Parameter(torch.FloatTensor(n_head, feat_in, feat_out))
+        self.attn = nn.Parameter(torch.FloatTensor(n_head, feat_out * 2, 1))
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(feat_out))
 
-
-class SpecialSpmm(nn.Module):
-    def forward(self):
-        return SpecialSpmm()
+    def forward(self, x, adj):
+        """
+        :param x:   (num_ent, feat_in)
+        :param adj: (num_edge, num_edge)
+        :return:
+        """
+        output = []
+        N = x.size()[0]
+        edge = adj._indices()
+        for i in range(self.n_head):
+            if self.diag:
+                h = torch.mul(x, self.weight[i])  # [num_ent, feat_out]
+            else:
+                h = torch.mm(x, self.weight[i])  # [num_ent, feat_out]
+            edge_h = torch.cat((h[edge[0], :], h[edge[1], :]), dim=1)  # [num_ent, 2 * feat_out]
+            edge_e = torch.exp(-self.leaky_relu(torch.mm(edge_h, self.attn[i]).squeeze()))  # [num_ent,]
+            e_row_sum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones([N, 1]))  # [N, 1]
+            edge_e = self.attn_dropout(edge_e)
+            h_prime = self.special_spmm(edge, edge_e, torch.Size([N, N]), h)
+            h_prime = torch.div(h_prime, e_row_sum)
+            output.append(h_prime.unsqueeze(0))
+        output = torch.cat(output, dim=0)
+        if self.bias is not None:
+            return output + self.bias
+        else:
+            return output
 
 
 class SpecialSpmmFunction(torch.autograd.Function):
@@ -168,25 +205,4 @@ class SpecialSpmmFunction(torch.autograd.Function):
 
 class SpecialSpmm(torch.nn.Module):
     def forward(self, indices, values, shape, b):
-        return SpecialSpmmFunction.apply(indices, values, shape, b)
-
-
-if __name__ == '__main__':
-    # 创建测试数据
-    indices = torch.tensor([[0, 1, 1], [2, 0, 2]])  # 稀疏矩阵的索引
-    values = torch.tensor([3.0, 4.0, 5.0], requires_grad=True)  # 稀疏矩阵的值
-    shape = (3, 3)  # 稀疏矩阵的形状
-    b = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]], requires_grad=True)  # 乘法右侧的稠密矩阵
-
-    # 实例化 SpecialSpmm 并计算前向传播
-    spmm = SpecialSpmm()
-    output = spmm(indices, values, shape, b)
-
-    # 计算反向传播
-    loss = output.sum()  # 构造损失函数
-    loss.backward()
-
-    # 打印结果
-    print("Output:\n", output)
-    print("Grad of values:", values.grad)
-    print("Grad of b:\n", b.grad)
+        return SpecialSpmmFunction(indices, values, shape, b)
