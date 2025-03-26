@@ -71,6 +71,20 @@ class VAE(nn.Module):
         return hidden, hidden_norm, decoder_output, kl_div
 
 
+class GCN(nn.Module):
+    def __init__(self, in_feat, hid_feat, out_feat, dropout):
+        super(GCN, self).__init__()
+        self.gc1 = GraphConvolution(in_feat, hid_feat)
+        self.gc2 = GraphConvolution(hid_feat, out_feat)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, adj):
+        x = F.relu(self.gc1(x, adj))
+        x = self.dropout(x)
+        x = self.gc2(x, adj)
+        return x
+
+
 class GraphConvolution(nn.Module):
     def __init__(self, in_features, out_features, bias=True):
         super(GraphConvolution, self).__init__()
@@ -96,6 +110,49 @@ class GraphConvolution(nn.Module):
             return output + self.bias
         else:
             return output
+
+
+class GAT(nn.Module):
+    def __init__(self, n_unit, n_head, dropout, attn_dropout, norm, diag):
+        super(GAT, self).__init__()
+        self.num_layer = len(n_unit) - 1
+        self.dropout = dropout
+        self.norm = norm
+        if self.norm:
+            self.inst_norm = nn.InstanceNorm1d(num_features=n_unit, momentum=0.0, affine=True)
+        self.layers = nn.ModuleList()
+        for i in range(self.num_layer):
+            feat_in = n_unit[i] * n_head[i - 1] if i else n_unit[i]
+            self.layers.append(MultiHeadGraphAttention(n_head[i], feat_in, n_unit[i + 1], attn_dropout, diag))
+
+    def forward(self, x, adj):
+        """
+        :param x:
+        :param adj:
+        :return: [num_ent, feat_in]
+        """
+        if self.norm:
+            x = self.inst_norm(x)
+
+        for i, gat_layer in enumerate(self.layers):
+            if i + 1 < self.num_layer:
+                x = F.dropout(x, self.dropout)
+
+            x = self.gat_layer(x, adj)
+
+            if self.diag:
+                x = x.mean(dim=0)
+
+            if i + 1 < self.num_layer:
+                if self.diag:
+                    x = F.elu(x)
+                else:
+                    x = F.elu(x.transpose(0, 1).contiguous().view(adj.size(0), -1))
+
+        if not self.diag:
+            x = x.mean(dim=0)
+
+        return x
 
 
 class MultiHeadGraphAttention(nn.Module):
@@ -127,7 +184,7 @@ class MultiHeadGraphAttention(nn.Module):
         """
         :param x:   (num_ent, feat_in)
         :param adj: (num_edge, num_edge)
-        :return:
+        :return:    (2, num_ent, feat_out)
         """
         output = []
         N = x.size()[0]
@@ -141,10 +198,10 @@ class MultiHeadGraphAttention(nn.Module):
             edge_e = torch.exp(-self.leaky_relu(torch.mm(edge_h, self.attn[i]).squeeze()))  # [num_ent,]
             e_row_sum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones([N, 1]))  # [N, 1]
             edge_e = self.attn_dropout(edge_e)
-            h_prime = self.special_spmm(edge, edge_e, torch.Size([N, N]), h)
-            h_prime = torch.div(h_prime, e_row_sum)
-            output.append(h_prime.unsqueeze(0))
-        output = torch.cat(output, dim=0)
+            h_prime = self.special_spmm(edge, edge_e, torch.Size([N, N]), h)  # [N, feat_out]
+            h_prime = torch.div(h_prime, e_row_sum)  # [N, feat_out]
+            output.append(h_prime.unsqueeze(0))  # list:2 [1, N, feat_out]
+        output = torch.cat(output, dim=0)  # [2, N, feat_out]
         if self.bias is not None:
             return output + self.bias
         else:

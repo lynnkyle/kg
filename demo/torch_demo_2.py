@@ -134,5 +134,21 @@ print(nn.functional.softmax(x, dim=-1))
 
 # 15. torch.mul 逐元素乘
 x = torch.tensor([[1, 2, 3, 4], [4, 5, 6, 7]])  # [2, in_feat]
-y = torch.tensor([[6, 7, 8]])  # [1, out_feat]
+y = torch.tensor([[6, 7, 8, 9]])  # [1, out_feat]
 print(x.mul(y))
+
+# 16. torch.instanceNorm1d
+# 同一batch每个通道每个样本单独计算均值和方差
+x = torch.tensor([[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [1, 2, 3]]], dtype=torch.float)  # [2, 2, 3]
+instance_norm = nn.InstanceNorm1d(num_features=2, eps=0, affine=False)
+print(instance_norm(x))
+# layer_norm
+# 可以指定形状
+x = torch.tensor([[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]], dtype=torch.float)  # [2, 2, 3]
+layer_norm = nn.LayerNorm(normalized_shape=(2, 2, 3), eps=0, elementwise_affine=False, bias=False)
+print(layer_norm(x))
+# batch_norm
+# 不同batch每个通道每个样本单独计算均值和方差
+x = torch.tensor([[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]], dtype=torch.float)
+batch_norm = nn.BatchNorm1d(num_features=2, eps=0, affine=False)
+print(batch_norm(x))

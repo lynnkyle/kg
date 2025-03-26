@@ -27,11 +27,11 @@ class MultiModalEncoder(nn.Module):
         txt_dim = self.args.txt_dim
         dropout = self.args.dropout
         self.use_project_head = use_project_head
-        """ 隐藏层维度列表 """
-        self.n_units = [int(x) for x in self.args.hidden_units.strip().split(",")]
-        self.input_dim = int(self.args.hidden_units.strip().split(",")[0])
+        """ GAT注意力的隐藏层 """
+        self.n_unit = [int(x) for x in self.args.hidden_unit.strip().split(",")]
+        self.input_dim = int(self.args.hidden_unit.strip().split(",")[0])
         """ GAT注意力头列表 """
-        self.n_gat_heads = [int(x) for x in self.args.gat_heads.strip().split(",")]
+        self.n_gat_head = [int(x) for x in self.args.gat_head.strip().split(",")]
         """
             实体嵌入层
         """
@@ -49,7 +49,10 @@ class MultiModalEncoder(nn.Module):
         self.txt_fc = nn.Linear(txt_feat_dim, txt_dim)
 
         self.vir_emb_gen_vae = VirEmbGen_vae(args)  # ???
-
+        if self.args.structure_encoder == 'gcn':
+            self.cross_graph_model = GCN()
+        elif self.args.structure_encoder == 'gat':
+            self.cross_graph_model = GAT()
         self.fusion = MformerFusion(args)
 
     def forward(self, input_idx, adj, rel_feat=None, attr_feat=None, name_feat=None, vis_feat=None, txt_feat=None,
