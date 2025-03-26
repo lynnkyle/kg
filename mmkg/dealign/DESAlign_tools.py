@@ -7,36 +7,6 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class MultiModalEncoder(nn.Module):
-    def __init__(self, args, ent_num, use_project_head=False,
-                 name_feat_dim=300, attr_feat_dim=1000, rel_feat_dim=1000, vis_feat_dim=2048, txt_feat_dim=100):
-        super(MultiModalEncoder, self).__init__()
-        self.args = args
-        attr_dim = self.args.attr_dim  # ???
-        vis_dim = self.args.vis_dim
-        txt_dim = self.args.txt_dim
-
-        # Entity Embedding
-        self.ent_num = ent_num
-        self.ent_dim = int(self.args.hidden_units.strip().split(',')[0])
-        self.ent_emb = nn.Embedding(ent_num, self.ent_dim)
-        nn.init.normal_(self.ent_emb.weight, std=1.0 / math.sqrt(self.ent_num))
-        self.ent_emb.requires_grad = True
-
-        # Modal Encoder
-        self.name_fc = nn.Linear(name_feat_dim, txt_dim)  # name_feat_dim
-        self.att_fc = nn.Linear(attr_feat_dim, attr_dim)
-        self.rel_fc = nn.Linear(rel_feat_dim, attr_dim)
-        self.vis_fc = nn.Linear(vis_feat_dim, vis_dim)
-        self.txt_fc = nn.Linear(txt_feat_dim, txt_dim)
-
-        self.vir_emb_gen_vae = VirEmbGen_vae(args=self.args, modal_num=self.args.modal_num)
-        if self.args.structure_encoder == 'gcn':
-            pass
-        elif self.args.structure_encoder == 'gat':
-            pass
-
-
 class VirEmbGen_vae(nn.Module):
     def __init__(self, args, modal_num=3):
         super(VirEmbGen_vae, self).__init__()
