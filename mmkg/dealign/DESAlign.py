@@ -4,19 +4,52 @@ from torch import nn
 from torch.nn import functional as F
 from transformers import apply_chunking_to_forward
 
+from mmkg.dealign.DESAlign_loss import AutomaticWeightedLoss
 from mmkg.dealign.DESAlign_tools import VirEmbGen_vae, GCN, GAT
 
 
 class DESAlign(nn.Module):
     def __init__(self, kgs, args):
         super(DESAlign, self).__init__()
+        self.input_idx = kgs['input_idx'].cuda()
+        self.adj = kgs['adj'].cuda()
+        self.vis_feat_dim = self.get_vis_dim(kgs)
+        self.txt_feat_dim = self.get_txt_dim(kgs)
+        self.ent_wo_vis = torch.Tensor(kgs['ent_wo_vis']).cuda()
+        self.ent_w_vis = torch.Tensor(kgs['ent_w_vis']).cuda()
+        self.rel_feat = torch.Tensor(kgs['rel_feat_dim']).cuda()
+        self.attr_feat = torch.Tensor(kgs['attr_feat_dim']).cuda()
+        self.name_feat = None
+        self.txt_feat = None
+        if kgs['name_features'] is not None:  # is None
+            self.name_feat = torch.Tensor(kgs['name_features']).cuda()
+            self.txt_feat = torch.Tensor(kgs['txt_features']).cuda()
+            self.args.modal_num = 5
+
+        self.multimodal_encoder = MultiModalEncoder(args, kgs['ent_num'], vis_feat_dim=self.vis_feat_dim,
+                                                    txt_feat_dim=self.txt_feat_dim)
+        self.multi_loss_layer = AutomaticWeightedLoss(num=5)
+        self.criterion_cl = icl_loss()
+        self.criterion_cl
 
     def forward(self, batch):
+        gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div = self.joint_emb_generate(
+            only_joint=False)
+
+    def get_vis_dim(self, kgs):
         pass
+
+    def get_txt_dim(self, kgs):
+        pass
+
+    def joint_emb_generate(self, only_joint=True, test=False):
+        gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div = self.multimodal_encoder(
+            self.input_idx, self.adj, self.vis_feat_dim, self.rel_feat_dim, self.attr_
+        )
 
 
 class MultiModalEncoder(nn.Module):
-    def __init__(self, args, ent_num, vis_feat_dim=None, txt_feat_dim=None, use_project_head=False,
+    def __init__(self, args, ent_num, vis_feat_dim=None, txt_feat_dim=None,
                  rel_input_dim=1000, attr_input_dim=1000, name_input_dim=300):
         super().__init__()
         self.ent_num = ent_num
@@ -24,7 +57,6 @@ class MultiModalEncoder(nn.Module):
         name_dim = args.name_dim
         vis_dim = args.vis_dim
         txt_dim = args.txt_dim
-        self.use_project_head = use_project_head
         """ GCN、GAT注意力的隐藏层 """
         self.n_unit = [int(x) for x in args.hidden_unit.strip().split(",")]
         self.input_dim = int(args.hidden_unit.strip().split(",")[0])
