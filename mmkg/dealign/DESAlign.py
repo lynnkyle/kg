@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn import functional as F
 from transformers import apply_chunking_to_forward
 
-from mmkg.dealign.DESAlign_tools import VirEmbGen_vae
+from mmkg.dealign.DESAlign_tools import VirEmbGen_vae, GCN, GAT
 
 
 class DESAlign(nn.Module):
@@ -19,19 +19,17 @@ class MultiModalEncoder(nn.Module):
     def __init__(self, args, ent_num, vis_feat_dim=None, txt_feat_dim=None, use_project_head=False,
                  rel_input_dim=1000, attr_input_dim=1000, name_input_dim=300):
         super().__init__()
-        self.args = args
         self.ent_num = ent_num
-        attr_dim = self.args.attr_dim
-        name_dim = self.args.name_dim
-        vis_dim = self.args.vis_dim
-        txt_dim = self.args.txt_dim
-        dropout = self.args.dropout
+        attr_dim = args.attr_dim
+        name_dim = args.name_dim
+        vis_dim = args.vis_dim
+        txt_dim = args.txt_dim
         self.use_project_head = use_project_head
-        """ GAT注意力的隐藏层 """
-        self.n_unit = [int(x) for x in self.args.hidden_unit.strip().split(",")]
-        self.input_dim = int(self.args.hidden_unit.strip().split(",")[0])
+        """ GCN、GAT注意力的隐藏层 """
+        self.n_unit = [int(x) for x in args.hidden_unit.strip().split(",")]
+        self.input_dim = int(args.hidden_unit.strip().split(",")[0])
         """ GAT注意力头列表 """
-        self.n_gat_head = [int(x) for x in self.args.gat_head.strip().split(",")]
+        self.n_gat_head = [int(x) for x in args.gat_head.strip().split(",")]
         """
             实体嵌入层
         """
@@ -49,14 +47,61 @@ class MultiModalEncoder(nn.Module):
         self.txt_fc = nn.Linear(txt_feat_dim, txt_dim)
 
         self.vir_emb_gen_vae = VirEmbGen_vae(args)  # ???
-        if self.args.structure_encoder == 'gcn':
-            self.cross_graph_model = GCN()
-        elif self.args.structure_encoder == 'gat':
-            self.cross_graph_model = GAT()
+
+        if args.structure_encoder == 'gcn':
+            self.cross_graph_model = GCN(self.n_unit[0], self.n_unit[1], self.n_unit[2], dropout=args.dropout)
+        elif args.structure_encoder == 'gat':
+            self.cross_graph_model = GAT(self.n_gat_head, self.n_unit, args.dropout, args.attn_dropout,
+                                         args.inst_norm, diag=True)
+
         self.fusion = MformerFusion(args)
 
     def forward(self, input_idx, adj, rel_feat=None, attr_feat=None, name_feat=None, vis_feat=None, txt_feat=None,
-                ent_wo_vis=None, _test=False):
+                ent_wo_vis=None, test=False):
+        if self.args.w_gcn:
+            gph_emb = self.cross_graph_model(self.ent_emb[input_idx], adj)
+        else:
+            gph_emb = None
+        if self.args.w_rel:
+            rel_emb = self.rel_fc(rel_feat)
+        else:
+            rel_emb = None
+        if self.args.w_attr:
+            attr_emb = self.attr_fc(attr_feat)
+        else:
+            attr_emb = None
+        if self.args.w_name:
+            name_emb = self.name_fc(name_feat)
+        else:
+            name_emb = None
+        if self.args.w_vis:
+            vis_emb = self.vis_fc(vis_feat)
+        else:
+            vis_emb = None
+        if self.args.w_txt:
+            txt_emb = self.txt_fc(txt_feat)
+        else:
+            txt_emb = None
+
+        vir_emb, x_hat, hyb_emb, kl_div = None, None, None, None
+
+        if self.args.stage >= 1:
+            if self.args.adapter == 'mlp':
+                vir_emb = self.vir_emb_gen([gph_emb, rel_emb, attr_emb, txt_emb, name_emb])
+            else:
+                vir_emb, vir_emb_norm, x_hat, hyb_emb, kl_div = self.vir_emb_gen_vae(
+                    [gph_emb, rel_emb, attr_emb, txt_emb, name_emb])
+
+            if ent_wo_vis.shape[0] > 0:  # [!!! have more problem]
+                if not test:
+                    vis_emb[ent_wo_vis, :] = vir_emb[ent_wo_vis, :]
+                else:
+                    vis_emb[ent_wo_vis, :] = vir_emb_norm[ent_wo_vis, :]
+
+        joint_embs, joint_embs_fz, hidden_states, weight_norm = self.fusion(
+            [vis_emb, attr_emb, rel_emb, gph_emb, name_emb, txt_emb])
+
+        return gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div
 
 
 class MformerFusion(nn.Module):

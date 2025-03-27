@@ -6,6 +6,32 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+"""
+    视觉虚拟嵌入生成器
+"""
+
+
+class VirEmbGen(nn.Module):
+    def __init__(self, args, num_modal=3):
+        super().__init__()
+        self.args = args
+        self.num_modal = num_modal
+        self.ent_dim = int(self.args.hidden_units.strip().split(',')[0])
+        if num_modal > 3:
+            num_modal = 5
+        self.dim = [self.ent_dim, self.args.attr_dim, self.args.attr_dim, self.args.name_dim, self.args.txt_dim]
+        self.fc = nn.Linear(sum(self.dim[:num_modal]), self.args.vis_dim)
+
+    def forward(self, embs):
+        embs = [embs[idx] for idx in range(len(embs)) if embs[idx] is not None]
+        hyb_emb = torch.cat(embs, dim=1)
+        return F.normalize(self.trans_fc(hyb_emb))
+
+
+"""
+    视觉虚拟嵌入生成器VAE
+"""
+
 
 class VirEmbGen_vae(nn.Module):
     def __init__(self, args, modal_num=3):
@@ -16,7 +42,7 @@ class VirEmbGen_vae(nn.Module):
         if modal_num > 3:
             modal_num = 5
 
-        self.dim = [self.ent_dim, self.args.attr_dim, self.args.attr_dim, self.args.txt_dim, self.args.name_dim]
+        self.dim = [self.ent_dim, self.args.attr_dim, self.args.attr_dim, self.args.name_dim, self.args.txt_dim]
         hidden_list = [self.args.vis_dim]
 
         self.vae = VAE(sum(self.dim[:modal_num]), hidden_list, self.args.vis_dim)
@@ -113,7 +139,7 @@ class GraphConvolution(nn.Module):
 
 
 class GAT(nn.Module):
-    def __init__(self, n_unit, n_head, dropout, attn_dropout, norm, diag):
+    def __init__(self, n_head, n_unit, dropout, attn_dropout, norm, diag):
         super(GAT, self).__init__()
         self.num_layer = len(n_unit) - 1
         self.dropout = dropout
@@ -122,7 +148,7 @@ class GAT(nn.Module):
             self.inst_norm = nn.InstanceNorm1d(num_features=n_unit, momentum=0.0, affine=True)
         self.layers = nn.ModuleList()
         for i in range(self.num_layer):
-            feat_in = n_unit[i] * n_head[i - 1] if i else n_unit[i]
+            feat_in = n_unit[i]
             self.layers.append(MultiHeadGraphAttention(n_head[i], feat_in, n_unit[i + 1], attn_dropout, diag))
 
     def forward(self, x, adj):
@@ -169,7 +195,7 @@ class MultiHeadGraphAttention(nn.Module):
         self.feat_in = feat_in
         self.feat_out = feat_out
         self.attn_dropout = attn_dropout
-        self.leaky_relu = nn.LeakyReLU()
+        self.leaky_relu = nn.LeakyReLU(negative_slope=0.2)
         self.special_spmm = SpecialSpmm()
         self.diag = diag
         if self.diag:
