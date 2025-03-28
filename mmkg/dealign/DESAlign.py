@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn import functional as F
 from transformers import apply_chunking_to_forward
 
-from mmkg.dealign.DESAlign_loss import AutomaticWeightedLoss
+from mmkg.dealign.DESAlign_loss import AutomaticWeightedLoss, IclLoss
 from mmkg.dealign.DESAlign_tools import VirEmbGen_vae, GCN, GAT
 
 
@@ -29,12 +29,16 @@ class DESAlign(nn.Module):
         self.multimodal_encoder = MultiModalEncoder(args, kgs['ent_num'], vis_feat_dim=self.vis_feat_dim,
                                                     txt_feat_dim=self.txt_feat_dim)
         self.multi_loss_layer = AutomaticWeightedLoss(num=5)
-        self.criterion_cl = icl_loss()
-        self.criterion_cl
+        self.criterion_cl = IclLoss(tau=self.args.tau, modal_weight=self.args.modal_weight, n_view=self.args.n_view)
+        self.criterion_cl_joint = IclLoss(tau=self.args.tau, modal_weight=self.args.modal_weight,
+                                          n_view=self.args.n_view)
+        self.criterion_align = IalLoss()
 
     def forward(self, batch):
         gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div = self.joint_emb_generate(
             only_joint=False)
+        gph_emb_hid, vis_emb_hid = None, None
+        pass
 
     def get_vis_dim(self, kgs):
         pass

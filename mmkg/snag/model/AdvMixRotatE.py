@@ -103,11 +103,11 @@ class AdvMixRotatE(nn.Module):
     """
 
     def update_noise(self):
-        txt_noise_weights = self.add_noise_to_embed(self.txt_emb.weight.data.clone(), self.txt_mean, self.txt_std,
+        txt_noise_weights = self.add_noise_to_embed(self.txt_emb.modal_weight.data.clone(), self.txt_mean, self.txt_std,
                                                     self.args.noise_ratio)
         self.txt_emb_noise = torch.nn.Embedding.from_pretrained(txt_noise_weights).requires_grad_(False)
 
-        vis_noise_weights = self.add_noise_to_embed(self.vis_emb.weight.data.clone(), self.vis_mean, self.vis_std,
+        vis_noise_weights = self.add_noise_to_embed(self.vis_emb.modal_weight.data.clone(), self.vis_mean, self.vis_std,
                                                     self.args.noise_ratio)
         self.vis_emb_noise = torch.nn.Embedding.from_pretrained(vis_noise_weights).requires_grad_(False)
 

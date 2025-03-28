@@ -152,3 +152,9 @@ print(layer_norm(x))
 x = torch.tensor([[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]], dtype=torch.float)
 batch_norm = nn.BatchNorm1d(num_features=2, eps=0, affine=False)
 print(batch_norm(x))
+
+# 17. F.one_hot
+import torch.nn.functional as F
+
+labels = F.one_hot(torch.arange(start=0, end=4, dtype=torch.int64), num_classes=4)
+print(labels)

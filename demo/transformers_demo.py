@@ -26,7 +26,7 @@ print(config)
 # model
 model = AutoModel.from_pretrained('../pre_trained/beit')
 print("beit_token_size_0==>", model.config.vocab_size)  # [8192]
-codebook_embeddings = model.embeddings.patch_embeddings.projection.weight
+codebook_embeddings = model.embeddings.patch_embeddings.projection.modal_weight
 print("beit_token_size_1==>", codebook_embeddings.shape)
 # processor
 url = 'http://images.cocodataset.org/val2017/000000039769.jpg'
