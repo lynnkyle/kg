@@ -127,11 +127,12 @@ class IclLoss(nn.Module):
     IAL对比学习损失函数
     核心思想: 最小化KL散度, 让不同模态的表示对齐
     计算方式: 让单模态和多模态的相似性分布，并使用KL散度约束
+    "在VAE的基础上, 进行实体对齐"
 """
 
 
 class IalLoss(nn.Module):
-    def __init__(self, tau=0.05, modal_weight=0.5, n_view=2, zoom=1, inversion=False, reduction='mean', detach=False):
+    def __init__(self, tau=0.05, modal_weight=0.5, n_view=2, zoom=0.1, inversion=False, reduction='mean', detach=False):
         super().__init__()
         self.tau = tau
         self.modal_weight = modal_weight
@@ -156,3 +157,43 @@ class IalLoss(nn.Module):
 
         assert src_zis.shape[0] == tar_zjs.shape[0]
 
+        batch_size = src_zis.shape[0]
+        LARGE_NUM = 1e9
+        masks = F.one_hot(torch.arange(start=0, end=batch_size, dtype=torch.int64),
+                          num_classes=batch_size).float().cuda()
+
+        p_aa = torch.matmul(src_zis, torch.transpose(src_zis, 0, 1)) / temperature
+        p_aa = p_aa - masks * LARGE_NUM
+        p_bb = torch.matmul(src_zjs, torch.transpose(src_zjs, 0, 1)) / temperature
+        p_bb = p_bb - masks * LARGE_NUM
+        q_aa = torch.matmul(tar_zis, torch.transpose(tar_zis, 0, 1)) / temperature
+        q_aa = q_aa - masks * LARGE_NUM
+        q_bb = torch.matmul(tar_zjs, torch.transpose(tar_zjs, 0, 1)) / temperature
+        q_bb = q_bb - masks * LARGE_NUM
+
+        p_ab = torch.matmul(src_zis, torch.transpose(src_zjs, 0, 1)) / temperature
+        p_ba = torch.matmul(src_zjs, torch.transpose(src_zis, 0, 1)) / temperature
+        q_ab = torch.matmul(tar_zis, torch.transpose(tar_zjs, 0, 1)) / temperature
+        q_ba = torch.matmul(tar_zjs, torch.transpose(tar_zis, 0, 1)) / temperature
+
+        if self.inversion:
+            pass
+        else:
+            p_ab = torch.cat([p_ab, p_aa], dim=1)
+            p_ba = torch.cat([p_ba, p_bb], dim=1)
+            q_ab = torch.cat([q_ab, q_aa], dim=1)
+            q_ba = torch.cat([q_ba, q_bb], dim=1)
+
+        loss_a = F.kl_div(F.log_softmax(p_ab.detach(), dim=1), F.softmax(q_ab.detach(), dim=1), reduction="none")
+        loss_b = F.kl_div(F.log_softmax(p_ba.detach(), dim=1), F.softmax(q_ba.detach(), dim=1), reduction="none")
+
+        if self.reduction == 'mean':
+            loss_a = loss_a.mean()
+            loss_b = loss_b.mean()
+        elif self.reduction == 'sum':
+            loss_a = loss_a.sum()
+            loss_b = loss_b.sum()
+        else:
+            raise NotImplementedError
+
+        return self.zoom * (alpha * loss_a + (1 - alpha) * loss_b)

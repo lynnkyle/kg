@@ -158,3 +158,7 @@ import torch.nn.functional as F
 
 labels = F.one_hot(torch.arange(start=0, end=4, dtype=torch.int64), num_classes=4)
 print(labels)
+
+# 18. F.kl_div (让P分布靠近Q分布)
+
+# 19.

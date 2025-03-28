@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn import functional as F
 from transformers import apply_chunking_to_forward
 
-from mmkg.dealign.DESAlign_loss import AutomaticWeightedLoss, IclLoss
+from mmkg.dealign.DESAlign_loss import AutomaticWeightedLoss, IclLoss, IalLoss
 from mmkg.dealign.DESAlign_tools import VirEmbGen_vae, GCN, GAT
 
 
@@ -15,8 +15,8 @@ class DESAlign(nn.Module):
         self.adj = kgs['adj'].cuda()
         self.vis_feat_dim = self.get_vis_dim(kgs)
         self.txt_feat_dim = self.get_txt_dim(kgs)
-        self.ent_wo_vis = torch.Tensor(kgs['ent_wo_vis']).cuda()
-        self.ent_w_vis = torch.Tensor(kgs['ent_w_vis']).cuda()
+        self.ent_wo_vis = torch.Tensor(kgs['ent_wo_vis']).cuda()  # 没有视觉信息的实体数据
+        self.ent_w_vis = torch.Tensor(kgs['ent_w_vis']).cuda()  # 有视觉信息的实体数据
         self.rel_feat = torch.Tensor(kgs['rel_feat_dim']).cuda()
         self.attr_feat = torch.Tensor(kgs['attr_feat_dim']).cuda()
         self.name_feat = None
@@ -29,15 +29,26 @@ class DESAlign(nn.Module):
         self.multimodal_encoder = MultiModalEncoder(args, kgs['ent_num'], vis_feat_dim=self.vis_feat_dim,
                                                     txt_feat_dim=self.txt_feat_dim)
         self.multi_loss_layer = AutomaticWeightedLoss(num=5)
-        self.criterion_cl = IclLoss(tau=self.args.tau, modal_weight=self.args.modal_weight, n_view=self.args.n_view)
-        self.criterion_cl_joint = IclLoss(tau=self.args.tau, modal_weight=self.args.modal_weight,
+        self.criterion_cl = IclLoss(tau=self.args.tau1, modal_weight=self.args.modal_weight, n_view=self.args.n_view)
+        self.criterion_cl_joint = IclLoss(tau=self.args.tau1, modal_weight=self.args.modal_weight,
                                           n_view=self.args.n_view)
-        self.criterion_align = IalLoss()
+        self.criterion_al = IalLoss(tau=self.args.tau2, modal_weight=self.args.modal_weight, n_view=self.args.n_view,
+                                    zoom=self.args.zoom, reduction=self.args.reduction)
+
+        self.kl_loss = nn.KLDivLoss(reduction="batchmean")
+        self.criterion = nn.MSELoss()
 
     def forward(self, batch):
         gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div = self.joint_emb_generate(
             only_joint=False)
-        gph_emb_hid, vis_emb_hid = None, None
+        gph_emb_hid, rel_emb_hid, attr_emb_hid, name_emb_hid, vis_emb_hid, txt_emb_hid, joint_emb_hid = self.gph_emb_generate(
+            hidden_states)
+
+        # Global Modality Integration
+        GMI_loss = self.criterion_cl_joint(joint_embs, batch) + self.criterion_cl_joint(joint_embs_fz, batch)
+        # Entity-level Modality Alignment
+        ECIA_loss = self.inner_view_loss()
+
         pass
 
     def get_vis_dim(self, kgs):
@@ -48,8 +59,58 @@ class DESAlign(nn.Module):
 
     def joint_emb_generate(self, only_joint=True, test=False):
         gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div = self.multimodal_encoder(
-            self.input_idx, self.adj, self.vis_feat_dim, self.rel_feat_dim, self.attr_
+            self.input_idx, self.adj, self.rel_feat, self.attr_feat, self.name_feat, self.vis_feat, self.txt_feat,
+            self.ent_wo_vis, test
         )
+        if only_joint:
+            return joint_embs_fz, weight_norm
+        else:
+            return gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div
+
+    def generate_hidden_emb(self, hidden_states):
+        gph_emb = F.normalize(hidden_states[:, 0, :].squeeze(1))
+        rel_emb = F.normalize(hidden_states[:, 1, :].squeeze(1))
+        attr_emb = F.normalize(hidden_states[:, 2, :].squeeze(1))
+
+        if self.args.w_vis:
+            vis_emb = F.normalize(hidden_states[:, 3, :].squeeze(1))
+        else:
+            vis_emb = None
+
+        if hidden_states.shape[1] >= 6:
+            name_emb = F.normalize(hidden_states[:, 4, :].squeeze(1))
+            txt_emb = F.normalize(hidden_states[:, 5, :].squeeze(1))
+        else:
+            name_emb, txt_emb = None, None
+
+        emb_list = [gph_emb, rel_emb, attr_emb, vis_emb, name_emb, txt_emb]
+        emb_cat = [i for i in emb_list if i is not None]
+        joint_emb = torch.cat(emb_cat, dim=1)
+        return gph_emb, rel_emb, attr_emb, name_emb, vis_emb, txt_emb, joint_emb
+
+    def inner_view_loss(self, gph_emb, rel_emb, attr_emb, vis_emb, name_emb, txt_emb, train_ill, vir_emb=None,
+                        weight_norm=None):
+        if weight_norm is not None:
+            mod_num = weight_norm.shape[1]
+            weight_norm = weight_norm * mod_num
+            loss_gcn = self.criterion_cl(gph_emb, train_ill, ) if gph_emb is not None else 0
+            loss_rel = self.criterion_cl(rel_emb, train_ill) if rel_emb is not None else 0
+            loss_attr = self.criterion_cl(attr_emb, train_ill) if attr_emb is not None else 0
+            loss_vis = self.criterion_cl(vis_emb, train_ill) if vis_emb is not None else 0
+            loss_name = self.criterion_cl(name_emb, train_ill) if name_emb is not None else 0
+            loss_txt = self.criterion_cl(txt_emb, train_ill) if txt_emb is not None else 0
+            loss_vir = self.criterion_cl(vir_emb, train_ill) if vir_emb is not None else 0
+        else:
+            loss_gcn = self.criterion_cl(gph_emb, train_ill) if gph_emb is not None else 0
+            loss_rel = self.criterion_cl(rel_emb, train_ill) if rel_emb is not None else 0
+            loss_attr = self.criterion_cl(attr_emb, train_ill) if attr_emb is not None else 0
+            loss_vis = self.criterion_cl(vis_emb, train_ill) if vis_emb is not None else 0
+            loss_name = self.criterion_cl(name_emb, train_ill) if name_emb is not None else 0
+            loss_txt = self.criterion_cl(txt_emb, train_ill) if txt_emb is not None else 0
+            loss_vir = self.criterion_cl(vir_emb, train_ill) if vir_emb is not None else 0
+        total_loss = self.multimodal_encoder(
+            [loss_gcn, loss_rel, loss_attr, loss_vis, loss_name, loss_txt]) + loss_vir
+        return total_loss
 
 
 class MultiModalEncoder(nn.Module):
