@@ -169,3 +169,8 @@ ls += ['banana']
 tpl += ('banana',)
 print(ls)
 print(tpl)
+
+# 16. update
+price = {"apple": 34, "banana": 66, "pear": 78}
+price.update({"orange": 1001})
+print(price)

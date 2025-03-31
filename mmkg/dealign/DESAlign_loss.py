@@ -60,13 +60,27 @@ class IclLoss(nn.Module):
         self.intra_weight = intra_weight
         self.inversion = inversion
 
-    def forward(self, emb, train_links, neg_l=None, neg_r=None, norm=True):
+    def forward(self, emb, train_links, neg_l=None, neg_r=None, weight_norm=None, norm=True):
+        """
+        :param emb:
+        :param train_links:
+        :param neg_l:
+        :param neg_r:
+        :param weight_norm:
+        :param norm:
+        :return:
+        """
         if norm:
             emb = F.normalize(emb, dim=1)
         zis = emb[train_links[:, 0]]  # embedding for i-th samples
         zjs = emb[train_links[:, 1]]  # embedding for j-th samples
-
-        score_w_min = None
+        if weight_norm is not None:
+            zis_w = weight_norm[train_links[:, 0]]
+            zjs_w = weight_norm[train_links[:, 1]]
+            score_w = torch.stack([zis_w, zjs_w], dim=1)
+            score_w_min = torch.min(score_w, 1)[0]
+        else:
+            score_w_min = None
         temperature = self.tau
         alpha = self.modal_weight
         n_view = self.n_view
@@ -75,16 +89,18 @@ class IclLoss(nn.Module):
         batch_size = hidden1.shape[0]
         hidden1_large = hidden1
         hidden2_large = hidden2
-        num_classes_1 = batch_size * n_view
-        if neg_l is not None:
+        if neg_l is None:
+            num_classes_1 = batch_size * n_view
+        else:
             num_classes_1 = batch_size * n_view + neg_l.shape[0]
             num_classes_2 = batch_size * n_view + neg_r.shape[0]
-            labels_2 = F.one_hot(torch.arange(start=0, end=batch_size), num_classes=num_classes_2).float().cuda()
         labels_1 = F.one_hot(torch.arange(start=0, end=batch_size, dtype=torch.int64),
                              num_classes=num_classes_1).float().cuda()  # 创建一个one-hot编码的标签矩阵，用于对比学习的损失计算
+        if neg_l is not None:
+            labels_2 = F.one_hot(torch.arange(start=0, end=batch_size), num_classes=num_classes_2).float().cuda()
+
         masks = F.one_hot(torch.arange(start=0, end=batch_size, dtype=torch.int64),
                           num_classes=batch_size).float().cuda()
-
         """
             计算所有样本的点积相似性
             logits_aa, logits_bb主要用于构造负样本, F.softmax中会使用到
@@ -95,15 +111,28 @@ class IclLoss(nn.Module):
         logits_bb = torch.matmul(hidden2, torch.transpose(hidden2_large, 0, 1)) / temperature
         logits_bb = logits_bb - masks * LARGE_NUM
 
+        if neg_l is not None:
+            zins = emb[neg_l]  # [batch_size, emb_dim]
+            zjns = emb[neg_r]  # [batch_size, emb_dim]
+            logits_ana = torch.matmul(hidden1, torch.transpose(zins, 0, 1)) / temperature  # [batch_size, batch_size]
+            logits_bnb = torch.matmul(hidden2, torch.transpose(zjns, 0, 1)) / temperature  # [batch_size, batch_size]
+
         logits_ab = torch.matmul(hidden1, torch.transpose(hidden2_large, 0, 1)) / temperature
         logits_ba = torch.matmul(hidden2, torch.transpose(hidden1_large, 0, 1)) / temperature
 
-        logits_a = torch.cat([logits_ab, logits_aa], dim=1)
-        logits_b = torch.cat([logits_ba, logits_bb], dim=1)
+        if self.inversion:
+            logits_a = torch.cat([logits_ab, logits_bb], dim=1)
+            logits_b = torch.cat([logits_ba, logits_aa], dim=1)
+        else:
+            if neg_l is None:
+                logits_a = torch.cat([logits_ab, logits_aa], dim=1)
+                logits_b = torch.cat([logits_ba, logits_bb], dim=1)
+            else:
+                logits_a = torch.cat([logits_ab, logits_aa, logits_ana], dim=1)
+                logits_b = torch.cat([logits_ba, logits_bb, logits_bnb], dim=1)
 
         loss_a = self.softXEnt(labels_1, logits_a, w_min=score_w_min)
         loss_b = self.softXEnt(labels_1, logits_b, w_min=score_w_min)
-
         return alpha * loss_a + (1 - alpha) * loss_b
 
     def softXEnt(self, target, logits, w_min=None):
@@ -143,14 +172,21 @@ class IalLoss(nn.Module):
         self.detach = detach
 
     def forward(self, src_emb, tar_emb, train_links, norm=True):
+        """
+        :param src_emb:
+        :param tar_emb:
+        :param train_links: 训练数据中成对的索引(即图中的边)
+        :param norm:
+        :return:
+        """
         if norm:
             src_emb = F.normalize(src_emb, dim=1)
             tar_emb = F.normalize(tar_emb, dim=1)
 
-        src_zis = src_emb[train_links[:, 0]]
-        src_zjs = src_emb[train_links[:, 1]]
-        tar_zis = tar_emb[train_links[:, 0]]
-        tar_zjs = tar_emb[train_links[:, 1]]
+        src_zis = src_emb[train_links[:, 0]]  # 源域中边的起点结点嵌入
+        src_zjs = src_emb[train_links[:, 1]]  # 源域中边的终点结点嵌入
+        tar_zis = tar_emb[train_links[:, 0]]  # 目标域中边的起点结点嵌入
+        tar_zjs = tar_emb[train_links[:, 1]]  # 目标域中边的终点结点嵌入
 
         temperature = self.tau
         alpha = self.modal_weight

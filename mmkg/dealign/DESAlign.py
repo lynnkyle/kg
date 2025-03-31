@@ -1,10 +1,11 @@
 import math
+import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
 from transformers import apply_chunking_to_forward
 
-from mmkg.dealign.DESAlign_loss import AutomaticWeightedLoss, IclLoss, IalLoss
+from mmkg.dealign.DESAlign_loss import CustomMultiLossLayer, AutomaticWeightedLoss, IclLoss, IalLoss
 from mmkg.dealign.DESAlign_tools import VirEmbGen_vae, GCN, GAT
 
 
@@ -28,7 +29,8 @@ class DESAlign(nn.Module):
 
         self.multimodal_encoder = MultiModalEncoder(args, kgs['ent_num'], vis_feat_dim=self.vis_feat_dim,
                                                     txt_feat_dim=self.txt_feat_dim)
-        self.multi_loss_layer = AutomaticWeightedLoss(num=5)
+        self.multi_loss_layer_1 = CustomMultiLossLayer(loss_num=6)
+        self.multi_loss_layer_2 = AutomaticWeightedLoss(loss_num=7)
         self.criterion_cl = IclLoss(tau=self.args.tau1, modal_weight=self.args.modal_weight, n_view=self.args.n_view)
         self.criterion_cl_joint = IclLoss(tau=self.args.tau1, modal_weight=self.args.modal_weight,
                                           n_view=self.args.n_view)
@@ -39,23 +41,44 @@ class DESAlign(nn.Module):
         self.criterion = nn.MSELoss()
 
     def forward(self, batch):
-        gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div = self.joint_emb_generate(
+        gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_emb, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div = self.joint_emb_generate(
             only_joint=False)
-        gph_emb_hid, rel_emb_hid, attr_emb_hid, name_emb_hid, vis_emb_hid, txt_emb_hid, joint_emb_hid = self.gph_emb_generate(
+        gph_emb_hid, vis_emb_hid, rel_emb_hid, attr_emb_hid, name_emb_hid, txt_emb_hid, joint_emb_hid = self.generate_hidden_emb(
             hidden_states)
 
-        # Global Modality Integration
-        GMI_loss = self.criterion_cl_joint(joint_embs, batch) + self.criterion_cl_joint(joint_embs_fz, batch)
-        # Entity-level Modality Alignment
-        ECIA_loss = self.inner_view_loss()
+        # Global Modality Integration(全局模态整合损失函数)
+        GMI_loss = self.criterion_cl_joint(joint_emb, batch) + self.criterion_cl_joint(joint_embs_fz, batch)
+        # Entity-level Modality Alignment(实体级别模态对齐损失函数)
+        ECIA_loss = self.inner_view_loss(gph_emb, rel_emb, attr_emb, vis_emb, name_emb, txt_emb, batch, vir_emb=vir_emb)
+        # Late Modality Refinement(后期模态优化损失)
+        IIR_loss = self.inner_view_loss(gph_emb_hid, rel_emb_hid, attr_emb_hid, vis_emb_hid, name_emb_hid,
+                                        txt_emb_hid, batch)
 
-        pass
+        loss_list = [GMI_loss, ECIA_loss, IIR_loss]
+        loss_update = {}
+
+        if self.args.awloss:
+            loss_all = self.multi_loss_layer_2(loss_list)
+        else:
+            loss_all = sum(loss_list)
+
+        loss_dic = {"joint_Intra_modal": GMI_loss.item(), "Intra_modal": ECIA_loss.item(), "IIR_loss": IIR_loss.item()}
+        loss_dic.update(loss_update)
+        output = {"loss_dic": loss_dic, "emb": joint_emb}
+        return loss_all, output
 
     def get_vis_dim(self, kgs):
-        pass
+        if isinstance(kgs['images_list'], list):
+            vis_dim = kgs['images_list'][0].shape[1]
+        elif isinstance(kgs['images_list'], np.ndarray):
+            vis_dim = kgs['images_list'].shape[1]
+        return vis_dim
 
     def get_txt_dim(self, kgs):
-        pass
+        if self.char_features is not None:
+            txt_dim = kgs["char_features"].shape[1]
+        else:
+            txt_dim = 100
 
     def joint_emb_generate(self, only_joint=True, test=False):
         gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_embs, joint_embs_fz, hidden_states, weight_norm, vir_emb, x_hat, hyb_emb, kl_div = self.multimodal_encoder(
@@ -86,20 +109,39 @@ class DESAlign(nn.Module):
         emb_list = [gph_emb, rel_emb, attr_emb, vis_emb, name_emb, txt_emb]
         emb_cat = [i for i in emb_list if i is not None]
         joint_emb = torch.cat(emb_cat, dim=1)
-        return gph_emb, rel_emb, attr_emb, name_emb, vis_emb, txt_emb, joint_emb
+        return gph_emb, vis_emb, rel_emb, attr_emb, name_emb, txt_emb, joint_emb
 
     def inner_view_loss(self, gph_emb, rel_emb, attr_emb, vis_emb, name_emb, txt_emb, train_ill, vir_emb=None,
                         weight_norm=None):
+        """
+        :param gph_emb:
+        :param rel_emb:
+        :param attr_emb:
+        :param vis_emb:
+        :param name_emb:
+        :param txt_emb:
+        :param train_ill: 训练集中的对齐实体索引对
+        :param vir_emb:
+        :param weight_norm: vis、 vir、 attr、 rel、 gcn、 name、 attr
+        :return:
+        """
         if weight_norm is not None:
             mod_num = weight_norm.shape[1]
             weight_norm = weight_norm * mod_num
-            loss_gcn = self.criterion_cl(gph_emb, train_ill, ) if gph_emb is not None else 0
-            loss_rel = self.criterion_cl(rel_emb, train_ill) if rel_emb is not None else 0
-            loss_attr = self.criterion_cl(attr_emb, train_ill) if attr_emb is not None else 0
-            loss_vis = self.criterion_cl(vis_emb, train_ill) if vis_emb is not None else 0
-            loss_name = self.criterion_cl(name_emb, train_ill) if name_emb is not None else 0
-            loss_txt = self.criterion_cl(txt_emb, train_ill) if txt_emb is not None else 0
-            loss_vir = self.criterion_cl(vir_emb, train_ill) if vir_emb is not None else 0
+            loss_gcn = self.criterion_cl(gph_emb, train_ill,
+                                         weight_norm=weight_norm[:, 3]) if gph_emb is not None else 0
+            loss_rel = self.criterion_cl(rel_emb, train_ill,
+                                         weight_norm=weight_norm[:, 2]) if rel_emb is not None else 0
+            loss_attr = self.criterion_cl(attr_emb, train_ill,
+                                          weight_norm=weight_norm[:, 1]) if attr_emb is not None else 0
+            loss_vis = self.criterion_cl(vis_emb, train_ill,
+                                         weight_norm=weight_norm[:, 0]) if vis_emb is not None else 0
+            loss_name = self.criterion_cl(name_emb, train_ill,
+                                          weight_norm=weight_norm[:, 4]) if name_emb is not None else 0
+            loss_txt = self.criterion_cl(txt_emb, train_ill,
+                                         weight_norm=weight_norm[:, 5]) if txt_emb is not None else 0
+            loss_vir = self.criterion_cl(vir_emb, train_ill,
+                                         weight_norm=weight_norm[:, 0]) if vir_emb is not None else 0
         else:
             loss_gcn = self.criterion_cl(gph_emb, train_ill) if gph_emb is not None else 0
             loss_rel = self.criterion_cl(rel_emb, train_ill) if rel_emb is not None else 0
@@ -108,9 +150,18 @@ class DESAlign(nn.Module):
             loss_name = self.criterion_cl(name_emb, train_ill) if name_emb is not None else 0
             loss_txt = self.criterion_cl(txt_emb, train_ill) if txt_emb is not None else 0
             loss_vir = self.criterion_cl(vir_emb, train_ill) if vir_emb is not None else 0
-        total_loss = self.multimodal_encoder(
+        total_loss = self.multi_loss_layer_1(
             [loss_gcn, loss_rel, loss_attr, loss_vis, loss_name, loss_txt]) + loss_vir
         return total_loss
+
+    def iter_new_links(self, epoch, left_non_train, final_emb, right_non_train, new_links=[]):
+        if len(left_non_train) == 0 or len(right_non_train) == 0:
+            return new_links
+        distance_list = []
+        for i in np.arange(0, len(left_non_train), 1000):
+            d
+    def data_refresh(self, logger, train_ill, test_ill, left_non_train, right_non_train, new_links=[]):
+        pass
 
 
 class MultiModalEncoder(nn.Module):
