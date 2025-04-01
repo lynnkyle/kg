@@ -7,6 +7,7 @@ from transformers import apply_chunking_to_forward
 
 from mmkg.dealign.DESAlign_loss import CustomMultiLossLayer, AutomaticWeightedLoss, IclLoss, IalLoss
 from mmkg.dealign.DESAlign_tools import VirEmbGen_vae, GCN, GAT
+from mmkg.dealign.utils import pairwise_distances
 
 
 class DESAlign(nn.Module):
@@ -159,7 +160,10 @@ class DESAlign(nn.Module):
             return new_links
         distance_list = []
         for i in np.arange(0, len(left_non_train), 1000):
-            d
+            d = pairwise_distances(left_non_train[i:i + 1000], right_non_train)
+            distance_list.append(d)
+            pass
+
     def data_refresh(self, logger, train_ill, test_ill, left_non_train, right_non_train, new_links=[]):
         pass
 
