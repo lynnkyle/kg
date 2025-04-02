@@ -161,4 +161,5 @@ print(labels)
 
 # 18. F.kl_div (让P分布靠近Q分布)
 
-# 19.
+# 19. scale、 unscale
+
