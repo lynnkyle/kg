@@ -108,8 +108,8 @@ def train_one_epoch(model, optimizer):
         ent_embs, rel_embs = model()
         score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
-        if args.mu != 0:
-            loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
+        # if args.mu != 0:
+        #     loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
         total_loss += loss.item()
         optimizer.zero_grad()
         loss.backward()
