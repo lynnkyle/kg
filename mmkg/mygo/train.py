@@ -92,8 +92,14 @@ model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visua
              dim_hid=args.dim_hid, num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
              num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
              visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout, score_function='tucker').cuda()
+# 模型加载
+# model.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/305_1.ckpt')['state_dict'])
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+# 优化器加载
+# optimizer.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/305_1.ckpt')['optimizer'])
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
+# 学习率裁剪器加载
+# lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/305_1.ckpt')['scheduler'])
 
 """
     模型训练
@@ -104,12 +110,13 @@ def train_one_epoch(model, optimizer):
     model.train()
     total_loss = 0
     loss_fn = torch.nn.CrossEntropyLoss()
-    for batch, label in tqdm(kg_loader):
+    # for batch, label in tqdm(kg_loader):
+    for batch, label in kg_loader:
         ent_embs, rel_embs = model()
         score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
-        # if args.mu != 0:
-        #     loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
+        if args.mu != 0:
+            loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
         total_loss += loss.item()
         optimizer.zero_grad()
         loss.backward()
@@ -122,7 +129,8 @@ def train_one_epoch(model, optimizer):
 def valid_eval_metric(valid_or_test):
     rank_list = []
     ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
-    for triple in tqdm(valid_or_test):
+    # for triple in tqdm(valid_or_test):
+    for triple in valid_or_test:
         h, r, t = triple
         head_score = \
             model.score(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,
@@ -140,6 +148,7 @@ def valid_eval_metric(valid_or_test):
 
 
 best_mrr = 0
+best_result = None
 for epoch in range(args.num_epoch):
     loss = train_one_epoch(model, optimizer)
     lr_scheduler.step()
@@ -167,5 +176,5 @@ for epoch in range(args.num_epoch):
             torch.save({'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
                         'scheduler': lr_scheduler.state_dict()}, f'ckpt/{args.model}/{args.data}/{epoch}.ckpt')
 
-logger.info(f'Best MRR: {best_mrr}')
+logger.info(f'Best MRR: {best_mrr}, Best Result: {best_result}')
 logger.info("Done")
