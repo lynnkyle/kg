@@ -17,6 +17,7 @@ from utils import calculate_rank, metrics
 """
     代码可复现
 """
+torch.cuda.set_device(1)
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
@@ -32,7 +33,7 @@ torch.backends.cudnn.benchmark = False
 """
 torch.cuda.set_device(1)
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type=str, default='MKG-W')
+parser.add_argument('--data', type=str, default='DB15K')
 parser.add_argument('--batch_size', type=int, default=2048)
 parser.add_argument('--model', type=str, default='MyGo')
 parser.add_argument('--device', type=str, default='cuda:1')
@@ -78,7 +79,7 @@ logger.addHandler(file_handler)
 """
     创建数据集
 """
-kg = VTKG(data='MKG-W', max_vis_len=-1)
+kg = VTKG(data=args.data, max_vis_len=-1)
 kg_loader = torch.utils.data.DataLoader(kg, batch_size=args.batch_size, shuffle=False)
 
 """
@@ -104,12 +105,13 @@ def train_one_epoch(model, optimizer):
     model.train()
     total_loss = 0
     loss_fn = torch.nn.CrossEntropyLoss()
-    for batch, label in tqdm(kg_loader):
+    for batch, label in kg_loader:
+    # for batch, label in tqdm(kg_loader):
         ent_embs, rel_embs = model()
         score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
-        # if args.mu != 0:
-        #     loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
+        if args.mu != 0:
+            loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
         total_loss += loss.item()
         optimizer.zero_grad()
         loss.backward()
@@ -122,7 +124,8 @@ def train_one_epoch(model, optimizer):
 def valid_eval_metric(valid_or_test):
     rank_list = []
     ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
-    for triple in tqdm(valid_or_test):
+    for triple in valid_or_test:
+        # for triple in tqdm(valid_or_test):
         h, r, t = triple
         head_score = \
             model.score(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,

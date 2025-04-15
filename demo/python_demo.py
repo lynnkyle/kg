@@ -1,4 +1,6 @@
 import random
+
+import numpy as np
 import torch
 
 # 1. dict的使用
@@ -174,3 +176,43 @@ print(tpl)
 price = {"apple": 34, "banana": 66, "pear": 78}
 price.update({"orange": 1001})
 print(price)
+
+# 17. collections.Counter
+from collections import Counter
+
+lst = ['a', 'b', 'c', 'a', 'b', 'c', 'a', 'a', 'b']
+counter = Counter(lst)
+print(counter)
+print(counter.most_common(2))
+
+# 18. sorted
+dic = {'a': 2, 'b': 6, 'c': 4, 'd': 5}
+res = sorted(dic, key=dic.get, reverse=True)
+print(res)
+
+# 19. scipy.sparse
+## 1). sp.coo_matrix
+
+import scipy.sparse as sp
+
+data = np.array([1, 2, 5, 6, 7, 9])
+row = np.array([0, 0, 1, 1, 2, 2])
+col = np.array([0, 1, 1, 2, 0, 2])
+coo = sp.coo_matrix((data, (row, col)), shape=(3, 3))
+print(coo)
+print(coo.toarray())
+
+sparse_mx = coo.tocoo().astype(np.float32)
+print(sparse_mx)
+row = sparse_mx.row
+col = sparse_mx.col
+print(row)
+print(col)
+res = np.stack((row, col))
+print(res)
+
+## 2). sp.diags
+data = np.array([1, 2, 3, 4])
+matrix = sp.diags(data, offsets=0)
+print(matrix)
+print(matrix.toarray())
