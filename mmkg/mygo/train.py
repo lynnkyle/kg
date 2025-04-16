@@ -184,7 +184,7 @@ for epoch in range(args.num_epoch):
             best_mrr = mrr
             best_result = (mr, mrr, hit10, hit3, hit1)
             torch.save({'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
-                        'scheduler': lr_scheduler.state_dict()}, f'ckpt/{args.model}/{args.data}/{epoch}.ckpt')
+                        'scheduler': lr_scheduler.state_dict()}, f'ckpt/{args.model}/{args.data}/{epoch + 1}.ckpt')
 
 logger.info(f'Best MRR: {best_mrr}, Best Result: {best_result}')
 logger.info("Done")
