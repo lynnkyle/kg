@@ -1,3 +1,10 @@
+"""
+
+CUDA_VISIBLE_DEVICES=0 nohup python train_mygo_fgc.py --data MKG-W --num_epoch 1500 --hidden_dim 1024 --lr 5e-4 --dim 256 --max_txt_token 8 --num_head 4 --emb_dropout 0.9 --vis_dropout 0.4 --txt_dropout 0.1 --num_layer_dec 2 --mu 0.001 > log_MKG-W.txt &
+
+CUDA_VISIBLE_DEVICES=0 nohup python train_mygo_fgc.py --data DB15K --num_epoch 1500 --hidden_dim 1024 --lr 1e-3 --dim 256 --max_vis_token 8 --max_txt_token 4 --num_head 2 --emb_dropout 0.6 --vis_dropout 0.3 --txt_dropout 0.1 --num_layer_dec 1 --mu 0.01 > log_DB15K.txt &
+
+"""
 import os
 import sys
 import argparse
@@ -40,6 +47,8 @@ parser.add_argument('--device', type=str, default='cuda:1')
 parser.add_argument('--num_epoch', type=int, default=1500)
 parser.add_argument('--valid_epoch', type=int, default=1)
 parser.add_argument('--str_dim', default=256, type=int)
+parser.add_argument('--max_vis_token', default=8, type=int)
+parser.add_argument('--max_txt_token', default=4, type=int)
 parser.add_argument("--no_write", action='store_true')
 parser.add_argument('--str_dropout', default=0, type=float)
 parser.add_argument('--visual_dropout', default=0, type=float)
@@ -85,8 +94,8 @@ kg_loader = torch.utils.data.DataLoader(kg, batch_size=args.batch_size, shuffle=
 """
     模型要素
 """
-visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=8)
-textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=4)
+visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=args.max_vis_token)
+textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=args.max_txt_token)
 model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
              textual_tokenizer='bert', visual_token_index=visual_token_index, textual_token_index=textual_token_index,
              visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
@@ -106,7 +115,7 @@ def train_one_epoch(model, optimizer):
     total_loss = 0
     loss_fn = torch.nn.CrossEntropyLoss()
     for batch, label in kg_loader:
-    # for batch, label in tqdm(kg_loader):
+        # for batch, label in tqdm(kg_loader):
         ent_embs, rel_embs = model()
         score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
@@ -143,6 +152,7 @@ def valid_eval_metric(valid_or_test):
 
 
 best_mrr = 0
+best_result = None
 for epoch in range(args.num_epoch):
     loss = train_one_epoch(model, optimizer)
     lr_scheduler.step()
@@ -170,5 +180,5 @@ for epoch in range(args.num_epoch):
             torch.save({'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
                         'scheduler': lr_scheduler.state_dict()}, f'ckpt/{args.model}/{args.data}/{epoch + 1}.ckpt')
 
-logger.info(f'Best MRR: {best_mrr}')
+logger.info(f'Best MRR: {best_mrr}, Best Result: {best_result}')
 logger.info("Done")
