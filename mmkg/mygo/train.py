@@ -102,9 +102,14 @@ model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visua
              dim_hid=args.dim_hid, num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
              num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
              visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout, score_function='tucker').cuda()
+# 模型加载
+model.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['state_dict'])
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+# 优化器加载
+optimizer.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['optimizer'])
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
-
+# 学习率裁剪器加载
+lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler'])
 """
     模型训练
 """
