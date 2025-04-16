@@ -12,7 +12,7 @@
       <paths name="ps@172.17.169.70:34 password (2)">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/ps/lzy/kg" local="$PROJECT_DIR$" />
+            <mapping deploy="/lzy/kg" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>
@@ -26,7 +26,7 @@
       <paths name="ps@172.17.169.70:34 password (4)">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/home/ps/lzy" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>
@@ -37,35 +37,7 @@
           </mappings>
         </serverdata>
       </paths>
-      <paths name="ps@172.17.169.70:34 password (6)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="ps@172.17.169.70:34 password (7)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="ps@172.17.169.70:34 password (8)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
       <paths name="ps@172.17.174.152:22 password">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="ps@172.17.174.152:22 password (2)">
         <serverdata>
           <mappings>
             <mapping local="$PROJECT_DIR$" web="/" />

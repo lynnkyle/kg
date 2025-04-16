@@ -1,10 +1,3 @@
-"""
-
-CUDA_VISIBLE_DEVICES=0 nohup python train_mygo_fgc.py --data MKG-W --num_epoch 1500 --hidden_dim 1024 --lr 5e-4 --dim 256 --max_txt_token 8 --num_head 4 --emb_dropout 0.9 --vis_dropout 0.4 --txt_dropout 0.1 --num_layer_dec 2 --mu 0.001 > log_MKG-W.txt &
-
-CUDA_VISIBLE_DEVICES=0 nohup python train_mygo_fgc.py --data DB15K --num_epoch 1500 --hidden_dim 1024 --lr 1e-3 --dim 256 --max_vis_token 8 --max_txt_token 4 --num_head 2 --emb_dropout 0.6 --vis_dropout 0.3 --txt_dropout 0.1 --num_layer_dec 1 --mu 0.01 > log_DB15K.txt &
-
-"""
 import os
 import sys
 import argparse
@@ -24,6 +17,7 @@ from utils import calculate_rank, metrics
 """
     代码可复现
 """
+torch.cuda.set_device(1)
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
@@ -46,12 +40,10 @@ parser.add_argument('--device', type=str, default='cuda:1')
 parser.add_argument('--num_epoch', type=int, default=1500)
 parser.add_argument('--valid_epoch', type=int, default=1)
 parser.add_argument('--str_dim', default=256, type=int)
-parser.add_argument('--max_vis_token', default=8, type=int)
-parser.add_argument('--max_txt_token', default=4, type=int)
 parser.add_argument("--no_write", action='store_true')
-parser.add_argument('--str_dropout', default=0.6, type=float)
-parser.add_argument('--visual_dropout', default=0.3, type=float)
-parser.add_argument('--textual_dropout', default=0.1, type=float)
+parser.add_argument('--str_dropout', default=0, type=float)
+parser.add_argument('--visual_dropout', default=0, type=float)
+parser.add_argument('--textual_dropout', default=0, type=float)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--mu', default=0.01, type=float)
 # Transformer的配置
@@ -93,22 +85,16 @@ kg_loader = torch.utils.data.DataLoader(kg, batch_size=args.batch_size, shuffle=
 """
     模型要素
 """
-visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=args.max_vis_token)
-textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=args.max_txt_token)
+visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=8)
+textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=4)
 model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
              textual_tokenizer='bert', visual_token_index=visual_token_index, textual_token_index=textual_token_index,
              visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
              dim_hid=args.dim_hid, num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
              num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
              visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout, score_function='tucker').cuda()
-# 模型加载
-# model.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/305_1.ckpt')['state_dict'])
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-# 优化器加载
-# optimizer.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/305_1.ckpt')['optimizer'])
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
-# 学习率裁剪器加载
-# lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/305_1.ckpt')['scheduler'])
 
 """
     模型训练
@@ -119,8 +105,8 @@ def train_one_epoch(model, optimizer):
     model.train()
     total_loss = 0
     loss_fn = torch.nn.CrossEntropyLoss()
-    # for batch, label in tqdm(kg_loader):
     for batch, label in kg_loader:
+    # for batch, label in tqdm(kg_loader):
         ent_embs, rel_embs = model()
         score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
@@ -138,8 +124,8 @@ def train_one_epoch(model, optimizer):
 def valid_eval_metric(valid_or_test):
     rank_list = []
     ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
-    # for triple in tqdm(valid_or_test):
     for triple in valid_or_test:
+        # for triple in tqdm(valid_or_test):
         h, r, t = triple
         head_score = \
             model.score(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,
@@ -157,8 +143,6 @@ def valid_eval_metric(valid_or_test):
 
 
 best_mrr = 0
-best_result = None
-logger.info(f"dataset is {args.data}, begin training!!!")
 for epoch in range(args.num_epoch):
     loss = train_one_epoch(model, optimizer)
     lr_scheduler.step()
@@ -186,5 +170,5 @@ for epoch in range(args.num_epoch):
             torch.save({'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
                         'scheduler': lr_scheduler.state_dict()}, f'ckpt/{args.model}/{args.data}/{epoch + 1}.ckpt')
 
-logger.info(f'Best MRR: {best_mrr}, Best Result: {best_result}')
+logger.info(f'Best MRR: {best_mrr}')
 logger.info("Done")
