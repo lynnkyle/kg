@@ -3,6 +3,7 @@ from torch import nn
 from model_new import Tucker, ContrastiveLoss
 import numpy as np
 
+
 class MyGo(nn.Module):
     def __init__(self, num_ent, num_rel, str_dim,
                  visual_tokenizer, textual_tokenizer,
@@ -125,7 +126,7 @@ class MyGo(nn.Module):
             self.textual_ln(self.proj_ent_textual(ent_textual_token))) + self.pos_textual_ent
         ent_seq = torch.cat([ent_token, rep_ent_str, rep_ent_visual, rep_ent_textual], dim=1)
         ent_embs = self.ent_encoder(ent_seq, src_key_padding_mask=self.ent_mask)[:, 0]
-        rel_embs = self.str_drop(self.str_ln(self.rel_emb)).squeeze(1)
+        rel_embs = self.str_drop(self.str_rel_ln(self.rel_emb)).squeeze(1)
         return torch.cat([ent_embs, self.lp_token], dim=0), rel_embs
 
     def score(self, triples, emb_ent, emb_rel):
