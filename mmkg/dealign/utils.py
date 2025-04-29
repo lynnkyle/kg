@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import scipy
 
 
 def pairwise_distances(x, y=None):
@@ -19,3 +20,32 @@ def pairwise_distances(x, y=None):
 
     distance = x_norm + y_norm - 2 * torch.mm(x, y.t())
     return torch.clamp(distance, 0.0, np.inf)
+
+
+def get_adjr(ent_size, triples, norm=False):
+    print('getting a sparse tensor r_adj...')
+    M = {}
+    for tri in triples:
+        if tri[0] == tri[2]:
+            continue
+        if (tri[0], tri[2]) not in M:
+            M[(tri[0], tri[2])] = 0
+        M[(tri[0], tri[2])] += 1
+    idx, val = [], []
+    for (fir, sec) in M:
+        idx.append((fir, sec))
+        idx.append((sec, fir))
+        val.append(M[(fir, sec)])
+        val.append(M[(fir, sec)])
+    for i in range(ent_size):
+        idx.append((i, i))
+        val.append(1)
+
+    if norm:
+        idx = np.array(idx, dtype=np.int32)
+        val = np.array(val, dtype=np.float32)
+        adj = scipy.sparse.coo_matrix((val, (idx[:, 0], idx[:, 1])), shape=(ent_size, ent_size), dtype=np.float32)
+        return sparse_mx_to_torch_sparse_tensor(normalize_adj(adj))
+    else:
+        M = torch.sparse_coo_tensor(torch.LongTensor(idx), torch.FloatTensor(val), torch.Size([ent_size, ent_size]))
+        return M
