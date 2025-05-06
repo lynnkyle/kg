@@ -22,6 +22,14 @@ def pairwise_distances(x, y=None):
     return torch.clamp(distance, 0.0, np.inf)
 
 
+def sparse_mx_to_torch_sparse_tensor(sparse_mx):
+    sparse_mx = sparse_mx.tocoo().astype(np.float32)
+    indices = torch.from_numpy(np.vstack(sparse_mx.row, sparse_mx.col)).astype(np.int64)
+    values = torch.from_numpy(sparse_mx.data)
+    size = torch.Size(sparse_mx.shape)
+    return torch.sparse.FloatTensor()
+
+
 def get_adjr(ent_size, triples, norm=False):
     print('getting a sparse tensor r_adj...')
     M = {}

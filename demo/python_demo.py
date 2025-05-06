@@ -192,27 +192,27 @@ print(res)
 
 # 19. scipy.sparse
 ## 1). sp.coo_matrix
-
 import scipy.sparse as sp
 
-data = np.array([1, 2, 5, 6, 7, 9])
-row = np.array([0, 0, 1, 1, 2, 2])
-col = np.array([0, 1, 1, 2, 0, 2])
+data = np.array([0, 1, 2, 6])
+row = np.array([0, 1, 2, 0])
+col = np.array([0, 1, 2, 2])
 coo = sp.coo_matrix((data, (row, col)), shape=(3, 3))
 print(coo)
 print(coo.toarray())
-
 sparse_mx = coo.tocoo().astype(np.float32)
 print(sparse_mx)
-row = sparse_mx.row
-col = sparse_mx.col
-print(row)
-print(col)
-res = np.stack((row, col))
-print(res)
+print(sparse_mx.row)
+print(sparse_mx.col)
+print(sparse_mx.data)
+
+### torch.sparse
+sparse_matrix = torch.sparse_coo_tensor(torch.LongTensor([[0, 1, 2], [0, 1, 2]]), torch.FloatTensor([1, 2, 3]),
+                                        size=(3, 3))
+print(sparse_matrix)
 
 ## 2). sp.diags
-data = np.array([1, 2, 3, 4])
-matrix = sp.diags(data, offsets=0)
-print(matrix)
-print(matrix.toarray())
+# data = np.array([1, 2, 3, 4])
+# matrix = sp.diags(data, offsets=0)
+# print(matrix)
+# print(matrix.toarray())
