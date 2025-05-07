@@ -27,7 +27,7 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     indices = torch.from_numpy(np.vstack(sparse_mx.row, sparse_mx.col)).astype(np.int64)
     values = torch.from_numpy(sparse_mx.data)
     size = torch.Size(sparse_mx.shape)
-    return torch.sparse.FloatTensor()
+    return torch.sparse_coo_tensor(indices, values, size)
 
 
 def get_adjr(ent_size, triples, norm=False):
