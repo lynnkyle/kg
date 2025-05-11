@@ -66,13 +66,45 @@ def train(
     prompter = Prompter(prompt_template_name)  # 提示词
     # 加载预训练模型
     model = LlamaForCausalLM.from_pretrained(base_model, torch_dtype=torch.float16, device_map=device_map)
-    print(model.config)
     # 加载分词器
     tokenizer = LlamaTokenizerFast.from_pretrained(base_model)
-    print(tokenizer.init_kwargs)
+    tokenizer.pad_token_id = 0  # <unk>
+    tokenizer.padding_side = 'left'  # 左侧填充句子
+
+    def tokenize(prompt, add_eos_token=True):
+        result = tokenizer(
+            prompt,
+            truncation=True,
+            max_length=cutoff_len,
+            padding=False,
+            return_tensors=None
+        )
+        # 手动添加<eos>: 适用于微调 decoder-only模型
+        # add_special_tokens = True: 适用于已有任务模板(bert,t5)
+        if result['input_ids'][-1] != tokenizer.eos_token_id and len(
+                result['input_ids']) < cutoff_len and add_eos_token:
+            result['input_ids'].append(tokenizer.eos_token_id)
+            result['attention_mask'].append(1)
+
+        result['labels'] = result['input_ids'].copy()
+        return result
+
+    def generate_and_tokenize_prompt(data_point):
+        full_prompt = prompter.generate_prompt(
+            data_point['instruction'], data_point['input']
+        )
+        tokenized_full_prompt = tokenize(full_prompt)
+        if not train_on_inputs:
+            user_prompt = prompter.generate_prompt(
+                data_point['instruction'], data_point['input']
+            )
+            tokenized_user_prompt = tokenize(
+                user_prompt, add_eos_token=add_eos_token
+            )
+            user_prompt_len =
 
 
 if __name__ == '__main__':
     # train(base_model="models--TheBloke--Llama-2-7B-fp16")
-    print(os.environ.get('LOCAL_RANK', 0))
+    # print(os.environ.get('LOCAL_RANK', 0))
     print(os.environ.get('WORLD_SIZE'))
