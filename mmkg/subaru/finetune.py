@@ -91,20 +91,44 @@ def train(
 
     def generate_and_tokenize_prompt(data_point):
         full_prompt = prompter.generate_prompt(
-            data_point['instruction'], data_point['input']
+            data_point['instruction'], data_point['input'], data_point['output']
         )
         tokenized_full_prompt = tokenize(full_prompt)
-        if not train_on_inputs:
+        if not train_on_inputs:  # 是否让模型学习用户的输入部分
             user_prompt = prompter.generate_prompt(
                 data_point['instruction'], data_point['input']
             )
             tokenized_user_prompt = tokenize(
                 user_prompt, add_eos_token=add_eos_token
             )
-            user_prompt_len =
+            user_prompt_len = len(tokenized_user_prompt['input_ids'])
+
+            if add_eos_token:
+                user_prompt_len -= 1
+
+            tokenized_full_prompt['labels'] = ([-100] * user_prompt_len +
+                                               tokenized_full_prompt['labels'][user_prompt_len:])
+        return tokenized_full_prompt
+
+    kgp_model = KnowledgePrompting()
 
 
 if __name__ == '__main__':
-    # train(base_model="models--TheBloke--Llama-2-7B-fp16")
-    # print(os.environ.get('LOCAL_RANK', 0))
-    print(os.environ.get('WORLD_SIZE'))
+    prompter = Prompter()
+    full_prompter = prompter.generate_prompt(instruction="林泽源是谁的爹?", label='郑皓哲')
+    print(full_prompter)
+    tokenizer = LlamaTokenizerFast.from_pretrained('models--TheBloke--Llama-2-7B-fp16')
+    tokenized_text = tokenizer(text=full_prompter, truncation=True, max_length=1024,
+                               padding=False, return_tensors=None)
+    tokenized_text['input_ids'].append(tokenizer.eos_token_id)
+    tokenized_text['attention_mask'].append(1)
+    tokenized_text['labels'] = tokenized_text['input_ids'].copy()
+    print(tokenized_text)
+    tokenized_full_prompt = tokenized_text
+    user_prompt = prompter.generate_prompt(instruction="林泽源是谁的爹?")
+    tokenized_user_prompt = tokenizer(text=user_prompt, truncation=True, max_length=1024, padding=False,
+                                      return_tensors=None)
+    user_prompt_len = len(tokenized_user_prompt['input_ids'])
+    print(user_prompt_len)
+    tokenized_full_prompt['labels'] = ([-100] * user_prompt_len) + tokenized_full_prompt['labels'][user_prompt_len:]
+    print(tokenized_full_prompt)
