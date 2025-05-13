@@ -40,7 +40,7 @@
       <paths name="ps@172.17.169.70:34 password (6)">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/ps/lzy/subaru" local="$PROJECT_DIR$" />
+            <mapping deploy="/home/ps/lzy/kg" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>
