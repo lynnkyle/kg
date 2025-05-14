@@ -110,7 +110,7 @@ def train(
                                                tokenized_full_prompt['labels'][user_prompt_len:])
         return tokenized_full_prompt
 
-    kgp_model = KnowledgePrompting()
+    # kgp_model = KnowledgePrompting()
 
 
 if __name__ == '__main__':
@@ -132,3 +132,9 @@ if __name__ == '__main__':
     print(user_prompt_len)
     tokenized_full_prompt['labels'] = ([-100] * user_prompt_len) + tokenized_full_prompt['labels'][user_prompt_len:]
     print(tokenized_full_prompt)
+    # 分词
+    tokenizer.add_tokens(['[QUERY]', '[ENTITY]'])
+    res = tokenizer.convert_tokens_to_ids(['[QUERY]'])
+    print(res)
+    res = tokenizer.convert_tokens_to_ids(['[ENTITY]'])
+    print(res)
