@@ -1,6 +1,7 @@
 import os
 import torch
 from torch import nn
+from transformers import LlamaForCausalLM
 from transformers.activations import ACT2FN
 
 """
@@ -82,4 +83,51 @@ class KGELlama(nn.Module):
         query_position = torch.nonzero(input_ids == query_holder)
         entity_position = torch.nonzero(input_ids == entity_holder)
 
+        # ??? view(-1)的原因
         query_embeds, entity_embeds = self.kge_model(query_ids, entity_ids.view(-1))
+
+        input_ids[input_ids == query_holder] = self.tokenizer.pad_token_id
+        input_ids[input_ids == entity_holder] = self.tokenizer.pad_token_id
+        input_emb = self.llama_model.model.embed_tokens(input_ids).clone()
+        # ???
+        input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds
+        input_emb[entity_position[:, 0], entity_position[:, 1]] = entity_embeds
+
+        # 训练/计算损失/微调 把输入送入模型并返回logits和loss
+        return self.llama_model(
+            input_embeds=input_emb,
+            attention_mask=attention_mask,
+            labels=labels
+        )
+
+    def generate(self, input_ids, query_ids, entity_ids, generation_config):
+        query_holder = self.tokenizer.convert_tokens_to_ids(['[QUERY]'])[0]
+        entity_holder = self.tokenizer.convert_tokens_to_ids(['[ENTITY]'])[0]
+        query_position = torch.nonzero(input_ids == query_holder)
+        entity_position = torch.nonzero(input_ids == entity_holder)
+
+        # ??? view(-1)的原因
+        query_embeds, entity_embeds = self.kge_model(query_ids, entity_ids.view(-1))
+
+        input_ids[input_ids == query_holder] = self.tokenizer.pad_token_id
+        input_ids[input_ids == entity_holder] = self.tokenizer.pad_token_id
+        input_emb = self.llama_model.model.model.embed_tokens(input_ids).clone()
+        # ???
+        input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds
+        input_emb[entity_position[:, 0], entity_position[:, 1]] = entity_embeds
+
+        # 生成文本 基于输入生成下一个token序列
+        return self.llama_model.generate(
+            input_embeds=input_emb,
+            generation_config=generation_config
+        )
+
+    def save_pretrained(self, peft_model_path):
+        self.llama_model.save_pretrained(peft_model_path)
+        torch.save(self.kge_model.state_dict(), os.path.join(os.path.dirname(peft_model_path), 'kge_model.pth'))
+
+
+if __name__ == '__main__':
+    model = LlamaForCausalLM.from_pretrained('models--TheBloke--Llama-2-7B-fp16')
+    res = model.model.embed_tokens(torch.LongTensor([[1, 2, 3], [4, 5, 6]]))
+    print(res)
