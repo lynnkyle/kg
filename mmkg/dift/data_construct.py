@@ -2,26 +2,23 @@ import json
 import os
 import random
 from copy import deepcopy
-
+from collections import defaultdict
 import numpy as np
+import networkx as nx
 import torch
 
 
-class KnowledgeGraph(object):
-    def __init__(self, args, tokenizer):
-        # Ent、Rel Information
-        self.ent2name, self.ent2desc, self.rel2name = load_text(args.data_dir, tokenizer, args.max_seq_len)
-        self.id2ent = {idx: ent for idx, ent in enumerate(self.ent2name.keys())}
-        self.ent2id = {ent: idx for idx, ent in self.id2ent.items()}
-
-        # Triplets Information
-        self.train_triplets = load_triples(os.path.join(args.data_dir, ))
-        self.valid_triplets = load_triples(os.path.join(args.data_dir, ))
-        self.test_triplets = load_triples(os.path.join(args.data_dir, ))
+def load_triples(file_path):
+    triplets = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f.readlines():
+            h, r, t = line.strip().split('\t')
+            triplets.append((h, r, t))
+    return triplets
 
 
 def load_text(data_dir, tokenizer, max_seq_len):
-    def truncate_text(ent2text, tonkenizer, max_len=50):
+    def truncate_text(ent2text, tokenizer, max_len=50):
         ents, texts = [], []
         for k, v in ent2text.items():
             ents.append(k)
@@ -45,6 +42,119 @@ def load_text(data_dir, tokenizer, max_seq_len):
     rel2name = {k: rel2text[k]['name'] for k in rel2text}
 
     return ent2name, ent2desc, rel2name
+
+
+class RelationOccurrence(object):
+    def __init__(self, data_dir):
+        self.triples = load_triples(os.path.join(data_dir, 'train.txt'))
+        self.rel = self.get_relations()
+        self.one_hop_triples, self.one_hop_relations = self.get_one_hop_triples()
+        self.rel_occurrences = self.count_rel_occurrences()
+
+    def get_relations(self):
+        rel = set()
+        for h, r, t in self.triples:
+            rel.add(r)
+        return rel
+
+    def get_one_hop_triples(self):
+        """
+        获取one_hop三元组的信息
+        one_hop_triples: {1: {(1, 'likes', 2)}, 2: {(1, 'likes', 2), (2, 'knows', 3)}, 3: {(2, 'knows', 3)}}
+        one_hop_relations: {1: {('likes', 0)}, 2: {('likes', 1), ('knows', 0)}, 3: {('knows', 1)}}
+        :return:
+        """
+        one_hop_triples = defaultdict(set)
+        one_hop_relations = defaultdict(set)
+        for h, r, t in self.triples:
+            one_hop_triples[h].add((h, r, t))
+            one_hop_triples[t].add((h, r, t))
+            one_hop_relations[h].add((r, 0))
+            one_hop_relations[t].add((r, 1))
+        return one_hop_triples, one_hop_relations
+
+    def count_rel_occurrences(self):
+        """
+        计算成对关系的共现次数
+        :return:
+        """
+        rel_occurrences = defaultdict(set)
+        for entity, one_hop_triple in self.one_hop_triples.items():
+            for h, r, t in one_hop_triple:
+                for r_sample, direct in self.one_hop_relations[entity]:
+                    if r == r_sample:
+                        continue
+                    elif entity == h:
+                        rel_occurrences[((r, 0), (r_sample, direct))] += 1
+                    else:
+                        rel_occurrences[((r, 1), (r_sample, direct))] += 1
+        return rel_occurrences
+
+
+class KnowledgeGraph(object):
+    def __init__(self, args, tokenizer):
+        self.args = args
+        # Ent、Rel Information
+        self.ent2name, self.ent2desc, self.rel2name = load_text(args.data_dir, tokenizer, args.max_seq_len)
+        self.id2ent = {idx: ent for idx, ent in enumerate(self.ent2name.keys())}
+        self.ent2id = {ent: idx for idx, ent in self.id2ent.items()}
+
+        # Triplets Information
+        self.train_triplets = load_triples(os.path.join(args.data_dir, 'train.txt'))
+        self.valid_triplets = load_triples(os.path.join(args.data_dir, 'valid.txt'))
+        self.test_triplets = load_triples(os.path.join(args.data_dir, 'test.txt'))
+
+        # All Entity AND All Relation
+        triplets = self.train_triplets
+        self.ent_list = sorted(list(set([h for h, _, _ in triplets] + [t for _, _, t in triplets])))
+        self.rel_list = sorted(list(set([r for _, r, _ in triplets])))
+        print(f'entity num: {len(self.ent_list)}; relation num: {len(self.rel_list)}')
+        self.relation_occurrence = RelationOccurrence(data_dir=args.data_dir)
+
+        # Graph Base On Train_Triplets
+        self.graph = nx.MultiDiGraph()
+        for h, r, t in self.train_triplets:
+            self.graph.add_edge(h, t, relation=r)
+        print(self.graph)
+
+    def neighbors_condition(self, ent, rel, direct):
+        """
+        根据某个实体ent及其相关关系，挑选出与其最相关的（邻居实体 + 关系）
+        :param ent:
+        :param rel:
+        :param direct:
+        :return:
+        """
+        out_edges = []
+        score_out = []
+        for h, t, attr_dict in self.graph.out_edges(ent, data=True):
+            assert ent == h
+            out_edges.append((h, attr_dict['relation'], t))
+            score_out.append(self.relation_occurrence.rel_occurrences[((rel, direct), (attr_dict['relation'], 0))])
+        out_sorted_indices_desc = np.argsort(score_out)[::-1]
+
+        in_edges = []
+        score_in = []
+        for h, t, attr_dict in self.graph.in_edges(ent, data=True):
+            assert ent == t
+            in_edges.append((h, attr_dict['relation'], t))
+            score_in.append(self.relation_occurrence.rel_occurrences[((rel, direct), (attr_dict['relation'], 1))])
+        in_sorted_indices_desc = np.argsort(score_in)[::-1]
+
+        if self.args.neighbor_num <= len(out_edges):
+        # return out_edges[out_sorted_indices_desc[:self.args.neighbor_num]]
+        elif self.args.neighbor_num <= len(out_edges + in_edges):
+            # return out_edges + in_edges[in_sorted_indices_desc[:self.args.neighbor_num - len(out_edges)]]
+        else:
+            edges = out_edges + in_edges
+            random.shuffle(edges)
+            return edges
+
+    def neighbors(self):
+        """
+        :return:
+        """
+        pass
 
 
 """

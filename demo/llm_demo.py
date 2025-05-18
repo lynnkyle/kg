@@ -37,3 +37,36 @@ print(embedding)
 # forward 得到隐藏层提取的向量, 用于下游任务
 res = llama(torch.LongTensor([[0, 1, 2, 3]]))
 print(res)
+
+"""
+    3. networkx图论与网络分析库, 用于创建、操作和研究复杂网络结构
+"""
+import networkx as nx
+
+# 创建图
+g = nx.Graph()
+# g = nx.MultiGraph(g) 多重图
+# g = nx.MultiDiGraph(g) 有向多重图
+g.add_node(1)
+g.add_nodes_from([2, 3])
+g.add_edge(1, 2, relation=3)
+g.add_edge(2, 3, relation=1)
+g.add_edge(3, 1, relation=2)
+# g.add_edges_from([(2, 3), (3, 1)])
+
+# 遍历图
+print(g)
+print("所有节点", g.nodes())
+print("所有边", g.edges())
+for u, v, data in g.edges(data=True):
+    print(f"{u} -> {v}: relation = {data['relation']}")
+
+# 计算最短路径
+path = nx.shortest_path(g, source=1, target=3)
+print("从1到3的最短路径:", path)
+
+# 可视化图
+import matplotlib.pyplot as plt
+
+nx.draw(g, with_labels=True)
+plt.show()

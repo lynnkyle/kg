@@ -216,3 +216,10 @@ print(sparse_matrix)
 # matrix = sp.diags(data, offsets=0)
 # print(matrix)
 # print(matrix.toarray())
+
+# 20.sort sortargs
+lst = [5, 20, 14, 37, 28, 56]
+res = np.sort(lst)
+print(res)
+res = np.argsort(lst)
+print(res)
