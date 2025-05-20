@@ -3,6 +3,8 @@ import os
 import random
 from copy import deepcopy
 from collections import defaultdict
+from multiprocessing import Pool
+from functools import partial
 import numpy as np
 import networkx as nx
 import torch
@@ -142,19 +144,39 @@ class KnowledgeGraph(object):
         in_sorted_indices_desc = np.argsort(score_in)[::-1]
 
         if self.args.neighbor_num <= len(out_edges):
-        # return out_edges[out_sorted_indices_desc[:self.args.neighbor_num]]
+            return [out_edges[out_sorted_indices_desc[i]] for i in range(self.args.neighbor_num)]
+            # return out_edges[out_sorted_indices_desc[:self.args.neighbor_num]]
         elif self.args.neighbor_num <= len(out_edges + in_edges):
+            return out_edges + [in_edges[in_sorted_indices_desc[i]] for i in
+                                range(self.args.neighbor_num - len(out_edges))]
             # return out_edges + in_edges[in_sorted_indices_desc[:self.args.neighbor_num - len(out_edges)]]
         else:
             edges = out_edges + in_edges
             random.shuffle(edges)
             return edges
 
-    def neighbors(self):
+    def neighbors(self, ent):
         """
         :return:
         """
-        pass
+        out_edges = []
+        for h, t, attr_dict in self.graph.out_edges(ent, data=True):
+            assert ent == h
+            out_edges.append((h, attr_dict['relation'], t))
+
+        in_edges = []
+        for h, t, attr_dict in self.graph.in_edges(ent, data=True):
+            assert ent == t
+            in_edges.append((h, attr_dict['relation'], t))
+
+        if self.args.neighbor_num <= len(out_edges):
+            return random.sample(out_edges, self.args.neighbor_num)
+        elif self.args.neighbor_num <= len(out_edges + in_edges):
+            return random.sample(out_edges + in_edges, self.args.neighbor_num)
+        else:
+            edges = out_edges + in_edges
+            random.shuffle(edges)
+            return edges
 
 
 """
@@ -263,7 +285,7 @@ def TransE_preprocess(args, graph: KnowledgeGraph):
         head_entity_ids = [graph.ent2idx[ent] for ent in head_topks]  # 当前样本的topK个头实体对应KnowledgeGraph的id
 
         head_prediction = {
-            'triplet': (h, r, t),
+            'triplet': (t, r, h),
             'inverse': True,
             'topk_ents': head_topk,
             'topk_names': head_topk_names,
@@ -336,7 +358,10 @@ def make_prompt(input_dict, graph: KnowledgeGraph):
     args = graph.args
 
     tail_prediction = not input_dict['reverse']
-    h, r, t = input_dict['triplets']
+    if tail_prediction:
+        h, r, t = input_dict['triplets']
+    else:
+        t, r, h = input_dict['triplets']
 
     ent2name, ent2desc, rel2name, = graph.ent2name, graph.ent2desc, graph.rel2name
     h_name, h_desc = ent2name[h], ent2desc[h]
@@ -356,12 +381,60 @@ def make_prompt(input_dict, graph: KnowledgeGraph):
 
     if args.add_special_tokens:
         try:
-            choices = [ent_name + '[ENTITY]' for ent_name in choices]
+            choices = [ent_name + ' [ENTITY]' for ent_name in choices]
         except:
             print(input_dict)
             print(choices)
             exit(0)
 
+    choices = '[' + '; '.join(choices) + ']'
 
-def make_dataset_mp():
-    pass
+    if tail_prediction:
+        if args.add_special_tokens:
+            prompt = f'Here is a triplet with tail entity t unknown: ({h_name}, {r_name}, t [QUERY]).\n\n'
+        else:
+            prompt = f'Here is a triplet with tail entity t unknown: ({h_name}, {r_name}, t).\n\n'
+        if args.add_entity_desc:
+            prompt += f'Following are some details about {h_name}:\n{h_desc}\n\n'
+        if args.add_neighbors:
+            if args.condition_neighbors:
+                neighbors = [(ent2name[e1], rel2name[r1], ent2name[e2]) for e1, r1, e2 in
+                             graph.neighbors_condition(h, r, 0)]
+            else:
+                neighbors = [(ent2name[e1], rel2name[r1], ent2name[e2]) for e1, r1, e2 in
+                             graph.neighbors(h)]
+            neighbors = '[' + '; '.join([f'({e1}, {r1}, {e2})' for e1, r1, e2 in neighbors]) + ']'
+            prompt += f'Following are some triplets about {h_name}:\n{neighbors}\n\n'
+        prompt += f'What is the entity name of t? Select one from the list: {choices}\n\n[Answer]: '
+
+        input_dict['input'] = prompt
+        input_dict['output'] = t_name
+    else:
+        if args.add_special_tokens:
+            prompt = f'Here is a triplet with head entity h unknown: (h [QUERY], {r_name}, {t_name}).\n\n'
+        else:
+            prompt = f'Here is a triplet with head entity h unknown: (h, {r_name}, {t_name}).\n\n'
+        if args.add_entity_desc:
+            prompt += f'Following are some details about {t_name}:\n{t_desc}\n\n'
+        if args.add_neighbors:
+            if args.condition_neighbors:
+                neighbors = [(ent2name[e1], rel2name[r1], ent2name[e2]) for e1, r1, e2 in
+                             graph.neighbors_condition(t, r, 1)]
+            else:
+                neighbors = [(ent2name[e1], rel2name[r1], ent2name[e2]) for e1, r1, e2 in
+                             graph.neighbors(t)]
+            neighbors = '[' + '; '.join([f'({e1}, {r1}, {e2})' for e1, r1, e2 in neighbors]) + ']'
+            prompt += f'Following are some triplets about {t_name}:\n{neighbors}\n\n'
+        prompt += f'What is the entity name of t? Select one from the list: {choices}\n\n[Answer]: '
+
+        input_dict['input'] = prompt
+        input_dict['output'] = h_name
+
+    return input_dict
+
+
+def make_dataset_mp(data, graph, output_file):
+    with Pool(20) as p:
+        data = p.map(partial(make_prompt, graph=graph), data)
+    json.dump(data, open(output_file, 'w', encoding='utf-8'), ensure_ascii=False, indent=4)
+    return data

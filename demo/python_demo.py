@@ -223,3 +223,35 @@ res = np.sort(lst)
 print(res)
 res = np.argsort(lst)
 print(res)
+
+# 21.random
+import random
+
+in_edge = [0, 1, 2, 3, 4]
+out_edge = [7, 8, 9, 10, 11]
+# 错误写法
+random.shuffle((in_edge + out_edge))
+
+# 22.Pool 线程池
+from multiprocessing import Pool
+
+
+def square(n):
+    return n * n
+
+
+with Pool(processes=4) as pool:
+    result = pool.map(square, range(10))
+
+print(result)
+
+# 23. partial 固定某些参数
+from functools import partial
+
+
+def power(n, x):
+    return x ** n
+
+
+exp = partial(power, x=2)
+print(exp(10))
