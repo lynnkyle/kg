@@ -1,10 +1,12 @@
-import torch
+from typing import Optional
 
-from transformers import AutoTokenizer, AutoModel
+import torch
 
 """
     1. 分词器Tokenizer的使用
 """
+from transformers import AutoTokenizer, TrainingArguments
+
 tokenizer = AutoTokenizer.from_pretrained('/home/ps/lzy/subaru/models--TheBloke--Llama-2-7B-fp16')
 
 text = "谁是谁的爹?我是郑皓哲的爹。谁是谁的儿?郑皓哲是我儿。"
@@ -26,6 +28,8 @@ print(res)
 """
     2. Llama大语言模型的使用
 """
+from transformers import AutoModel
+
 llama = AutoModel.from_pretrained('/home/ps/lzy/subaru/models--TheBloke--Llama-2-7B-fp16')
 
 # embed_tokens 得到token_id对应的嵌入
@@ -70,3 +74,61 @@ import matplotlib.pyplot as plt
 
 nx.draw(g, with_labels=True)
 plt.show()
+
+"""
+    4.HuggingFace参数解析器
+"""
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ModelArguments:
+    model_class: str = field(
+        default='KGELlama',
+        metadata={"help": "KGELLama | KGEBert"}
+    )
+    model_name_or_path: Optional[str] = field(
+        default='models--TheBloke--Llama-2-7B-fp16',
+        metadata={'help': "LLM Path"}
+    )
+    kge_model: Optional[str] = field(
+        default='MyGo',
+        metadata={"help": "KGELlama | KGEBert"}
+    )
+    embedding_dim: int = field(
+        default=768,
+        metadata={"help": "Embedding Dimension For KGEModel"}
+    )
+
+
+@dataclass
+class DataArguments:
+    dataset: str = field(default=None, metadata={'help': 'Fine Turn On Which Dataset'})
+    train_path: str = field(default=None, metadata={'help': 'Path For Train File'})
+    valid_path: str = field(default=None, metadata={'help': 'Path For Valid File'})
+    test_path: str = field(default=None, metadata={'help': 'Path For Test File'})
+    source_max_len: int = field(default=2048, metadata={'help': 'Maximum Source Sequence Length'})
+    target_max_len: int = field(default=64, metadata={'help': 'Maximum Target Sequence Length'})
+
+
+@dataclass
+class TrainingArguments(TrainingArguments):
+    # 大模型参数 微调与量化(高精度参数转换为低精度参数 float32-int4)
+    full_finetune: bool = field(default=False, metadata={'help': 'FineTurn Entire Model Without Adapter'})
+    use_quant: bool = field(default=False, metadata={'help': 'Use Quantized Model During Training Or Not'})
+    double_quant: bool = field(default=True, metadata={'help': 'Compress Statistics Through Double Quantization.'})
+    quant_type: str = field(default='nf4', metadata={'help': 'Quantization Type To Use fp4 Or nf4'})
+    bits: int = field(default=4, metadata={'help': 'Bit Of Compress Statistics'})
+
+    # KGEModel参数
+    do_train: bool = field(default=True, metadata={"help": 'Train Or Not'})
+    do_eval: bool = field(default=True, metadata={"help": 'Eval Or Not'})
+    output_dir: str = field(default='./output', metadata={"help": 'Output Dir For Logs And Checkpoints'})
+
+    num_
+
+
+from transformers import HfArgumentParser
+
+HfArgumentParser(())

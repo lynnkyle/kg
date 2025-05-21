@@ -255,3 +255,18 @@ def power(n, x):
 
 exp = partial(power, x=2)
 print(exp(10))
+
+# 24. dataclass、 field
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Person:
+    name: str = field(default='张三', repr=False, metadata={'help': '请输入人名'})
+    age: int = field(default=20, compare=False, metadata={'help': '请输入年龄'})
+
+
+p1 = Person()
+p2 = Person()
+print(p1)
+print(p1 == p2)

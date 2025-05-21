@@ -1,5 +1,3 @@
-from typing import Any
-
 import torch
 from torch import nn
 
@@ -159,6 +157,12 @@ import torch.nn.functional as F
 labels = F.one_hot(torch.arange(start=0, end=4, dtype=torch.int64), num_classes=4)
 print(labels)
 
-# 18. F.kl_div (让P分布靠近Q分布)
+# 18. pad_sequence
+from torch.nn.utils.rnn import pad_sequence
 
-# 19.
+seq1 = torch.tensor([1, 2, 3])
+seq2 = torch.tensor([4, 5])
+seq3 = torch.tensor([6])
+
+padded = pad_sequence([seq1, seq2, seq3], batch_first=True, padding_value=0)
+print(padded)
