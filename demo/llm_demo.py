@@ -1,3 +1,4 @@
+import argparse
 from typing import Optional
 
 import torch
@@ -195,9 +196,25 @@ print("medel_args==>", model_args)
 print("data_args==>", data_args)
 print("eval_args==>", evaluation_args)
 print("generation_args==>", generation_args)
-print("training_args==>", training_args)
+# print("training_args==>", training_args)
 
 """
+    5.
     AutoModel: 加载模型
-    get_accelerate_model: 加速/包装模型以支持多卡、混合精度等训练加速方式
+    get_peft_model: 加速/包装模型以支持多卡、混合精度等训练加速方式
 """
+args = argparse.Namespace(**vars(model_args), **vars(data_args), **vars(training_args), **vars(generation_args))
+print('args==>', args)
+
+# 1.AutoModel
+# llama = AutoModel.from_pretrained('/home/ps/lzy/subaru/models--TheBloke--Llama-2-7B-fp16')
+print(llama)
+
+"""
+    6.AutoConfig
+"""
+from transformers import AutoConfig
+
+config = AutoConfig.from_pretrained('/home/ps/lzy/subaru/models--TheBloke--Llama-2-7B-fp16')
+print(config.hidden_size)
+print(config.hidden_act)

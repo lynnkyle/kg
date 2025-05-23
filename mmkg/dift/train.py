@@ -1,8 +1,13 @@
 import os
 import argparse
-from utils import ModelArguments, DataArguments, TrainingArguments, EvaluationArguments, GenerationArguments, get_logger
 
-from transformers import HfArgumentParser, set_seed, GenerationConfig, AutoTokenizer
+from data import make_data_module
+from model import EmbeddingModel, KGELlama
+from utils import ModelArguments, DataArguments, TrainingArguments, EvaluationArguments, GenerationArguments, \
+    get_logger, get_accelerate_model
+
+from transformers import HfArgumentParser, set_seed, GenerationConfig, AutoTokenizer, AutoConfig, LlamaForCausalLM, \
+    Seq2SeqTrainer
 
 
 def train():
@@ -25,6 +30,26 @@ def train():
     if args.model_class == 'KGELlama':
         tokenizer.add_tokens(['[QUERY]', '[ENTITY]'])
 
+    model_config = AutoConfig.from_pretrained(args.model_name_or_path)
+    model = get_accelerate_model(args, model_config, LlamaForCausalLM)
+    model.config.use_cache = False
+
+    if args.model_class == 'KGELlama':
+        llm_config = model.config
+        kge_embedding_dir = os.path.join(args.dataset, args.kge_model)
+        embed_model = EmbeddingModel(kge_embedding_dir, args.embedding_dim, 1024, llm_config.hidden_size,
+                                     llm_config.hidden_act)
+        model = KGELlama(args, model, embed_model)
+
+    data_module = make_data_module(args, tokenizer, logger)
+    trainer = Seq2SeqTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        **data_module
+    )
+
+    if args.do_train:
 
 
 if __name__ == '__main__':
