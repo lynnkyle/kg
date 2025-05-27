@@ -29,9 +29,10 @@ print(res)
 """
     2. Llama大语言模型的使用
 """
-from transformers import AutoModel
+from transformers import AutoModel, LlamaForCausalLM
 
 llama = AutoModel.from_pretrained('/home/ps/lzy/subaru/models--TheBloke--Llama-2-7B-fp16')
+llamaForCausalLM = LlamaForCausalLM.from_pretrained('/home/ps/lzy/subaru/models--TheBloke--Llama-2-7B-fp16')
 
 # embed_tokens 得到token_id对应的嵌入
 embeds = llama.embed_tokens.weight
@@ -42,6 +43,15 @@ print(embedding)
 # forward 得到隐藏层提取的向量, 用于下游任务
 res = llama(torch.LongTensor([[0, 1, 2, 3]]))
 print(res)
+
+# generate
+tokenizer.pad_token = tokenizer.eos_token
+inputs = tokenizer(text=["what is birthday?", "why not go to travel?"], return_tensors="pt", padding=True)
+print(inputs)
+output = llamaForCausalLM.generate(**inputs, max_length=50)
+# print(output)
+generated_text = tokenizer.batch_decode(output, skip_special_tokens=True)
+print("generated_text====>", generated_text)
 
 """
     3. networkx图论与网络分析库, 用于创建、操作和研究复杂网络结构
@@ -218,3 +228,7 @@ from transformers import AutoConfig
 config = AutoConfig.from_pretrained('/home/ps/lzy/subaru/models--TheBloke--Llama-2-7B-fp16')
 print(config.hidden_size)
 print(config.hidden_act)
+
+"""
+    7.Seq2SeqTrainer
+"""
