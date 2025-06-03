@@ -23,9 +23,9 @@ from peft import LoraConfig, get_peft_model
 """
 data = {
     "translation": [
-        {'en': 'i love you', 'zh': '我爱你'},
-        {'en': 'hello', 'zh': '你好'},
-        {'en': 'Thank you', 'zh': '谢谢你'}
+        {'en': 'i love you', 'zh': 'i love you'},
+        {'en': 'hello', 'zh': 'hello'},
+        {'en': 'Thank you', 'zh': 'no thanks'}
     ]
 }
 
@@ -60,7 +60,7 @@ print(tokenized_data[0])
 # 3.训练模型
 training_args = Seq2SeqTrainingArguments(
     output_dir='./result',
-    num_train_epochs=3,
+    num_train_epochs=50,
     per_device_train_batch_size=2,
     logging_dir='./logs',
     logging_steps=1,
@@ -95,8 +95,6 @@ def preprocess(example):
 
 val_dataset = val_dataset.map(preprocess)
 print(val_dataset[0])
-# val_dataset.set_format(type="torch")
-# print(val_dataset[0])
 
 predictions = trainer.predict(val_dataset)
 
