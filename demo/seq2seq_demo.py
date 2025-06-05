@@ -60,13 +60,14 @@ print(tokenized_data[0])
 # 3.训练模型
 training_args = Seq2SeqTrainingArguments(
     output_dir='./result',
-    num_train_epochs=50,
+    num_train_epochs=5,
     per_device_train_batch_size=2,
     logging_dir='./logs',
     logging_steps=1,
     predict_with_generate=True,  # output.logits: [batch_size, seq_len, vocab_size]
     eval_strategy='no',
-    save_strategy='no'
+    save_strategy='no',
+    report_to=[]
 )
 
 trainer = Seq2SeqTrainer(
@@ -76,7 +77,12 @@ trainer = Seq2SeqTrainer(
     args=training_args
 )
 
-trainer.train()
+train_result = trainer.train()
+metrics = train_result.metrics
+# 记录训练的结果
+trainer.log_metrics('train', metrics)
+trainer.save_metrics('train', metrics)
+trainer.save_state()
 
 # 4. 模型训练完成
 print('training complete!!!')

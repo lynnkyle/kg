@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 import torch
 from peft import prepare_model_for_kbit_training, get_peft_model, LoraConfig
 from peft.tuners.lora import LoraLayer
-from transformers import Seq2SeqTrainingArguments, BitsAndBytesConfig
+import transformers
+from transformers import Seq2SeqTrainingArguments, BitsAndBytesConfig, TrainerState, TrainerControl
 
 
 @dataclass
@@ -179,3 +180,31 @@ def get_accelerate_model(args, config, pretrained_model_class):
                     module = module.to(torch.bfloat16)
 
     return model
+
+
+class SavePeftModelCallback(transformers.TrainerCallback):
+
+    def save_model(self, args, state, kwargs):
+        print("Saving PEFT checkout...")
+        if state.best_model_checkpoint is not None:
+            checkpoint_folder = os.path.join(state.best_model_checkpoint,
+                                             'adapter_model')  # evaluation_strategy == 'no'
+        else:
+            checkpoint_folder = os.path.join(args.output_dir, f'checkpoint-{state.global_step}')
+
+        peft_model_path = os.path.join(checkpoint_folder, 'adapter_model')
+        kwargs['model'].save_pretrained(peft_model_path)
+
+        # 节省磁盘空间，只保留你需要保存的 adapter 权重或特定内容（如 LoRA 的 kge 权重）
+        for file_name in os.listdir(checkpoint_folder):
+            if 'kge' in file_name:
+                continue
+            file_path = os.path.join(checkpoint_folder, file_name)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+
+    def on_save(self, args, state, control, **kwargs):
+        self.save_model(args, state, kwargs)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        self.save_model(args, state, kwargs)

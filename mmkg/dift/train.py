@@ -42,6 +42,7 @@ def train():
         model = KGELlama(args, model, embed_model)
 
     data_module = make_data_module(args, tokenizer, logger)
+
     trainer = Seq2SeqTrainer(
         model=model,
         tokenizer=tokenizer,
@@ -50,7 +51,11 @@ def train():
     )
 
     if args.do_train:
-
+        train_result = trainer.train()
+        metrics = train_result.metrics
+        # trainer.log_metrics('train', metrics)
+        trainer.save_metrics('train', metrics)
+        trainer.save_state()
 
 
 if __name__ == '__main__':
