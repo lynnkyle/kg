@@ -49,9 +49,11 @@ tokenizer.pad_token = tokenizer.eos_token
 inputs = tokenizer(text=["what is birthday?", "why not go to travel?"], return_tensors="pt", padding=True)
 print(inputs)
 output = llamaForCausalLM.generate(**inputs, max_length=50)
-# print(output)
+print(output)
 generated_text = tokenizer.batch_decode(output, skip_special_tokens=True)
 print("generated_text====>", generated_text)
+
+# predict
 
 """
     3. networkx图论与网络分析库, 用于创建、操作和研究复杂网络结构

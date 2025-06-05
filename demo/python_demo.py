@@ -270,3 +270,9 @@ p1 = Person()
 p2 = Person()
 print(p1)
 print(p1 == p2)
+
+# 25. map函数
+ls = [1, 3, 5, 7, 9, 11, 13, 15]
+
+res = map(lambda x: x * x, ls)
+print(list(res))
