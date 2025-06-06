@@ -4,7 +4,7 @@ import argparse
 from data import make_data_module
 from model import EmbeddingModel, KGELlama
 from utils import ModelArguments, DataArguments, TrainingArguments, EvaluationArguments, GenerationArguments, \
-    get_logger, get_accelerate_model
+    get_logger, get_accelerate_model, SavePeftModelCallback
 
 from transformers import HfArgumentParser, set_seed, GenerationConfig, AutoTokenizer, AutoConfig, LlamaForCausalLM, \
     Seq2SeqTrainer
@@ -50,12 +50,14 @@ def train():
         **data_module
     )
 
+    if not args.full_finetune:
+        trainer.add_callback(SavePeftModelCallback)  # 训练完成后，只保存PEFT adapter权重，而不是整个模型
+
     if args.do_train:
         train_result = trainer.train()
         metrics = train_result.metrics
-        # trainer.log_metrics('train', metrics)
-        trainer.save_metrics('train', metrics)
-        trainer.save_state()
+        trainer.save_metrics('train', metrics)  # 保存训练过程中的评估指标(损失、Hit1...)
+        trainer.save_state()  # 保存训练过程的中间状态(优化器状态、学习率调度器状态、当前的epoch, step)
 
 
 if __name__ == '__main__':
