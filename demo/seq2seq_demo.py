@@ -109,3 +109,5 @@ for src, tgt in zip(val_dataset, decoded):
     print(f"Input: {src['input_texts']}")
     print(f"Prediction: {tgt}")
     print("------")
+
+trainer.add_callback()

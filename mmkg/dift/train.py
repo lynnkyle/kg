@@ -4,7 +4,7 @@ import argparse
 from data import make_data_module
 from model import EmbeddingModel, KGELlama
 from utils import ModelArguments, DataArguments, TrainingArguments, EvaluationArguments, GenerationArguments, \
-    get_logger, get_accelerate_model
+    SavePeftModelCallback, get_logger, get_accelerate_model
 
 from transformers import HfArgumentParser, set_seed, GenerationConfig, AutoTokenizer, AutoConfig, LlamaForCausalLM, \
     Seq2SeqTrainer
@@ -49,6 +49,9 @@ def train():
         args=training_args,
         **data_module
     )
+
+    if not args.full_finetune:
+        trainer.add_callback(SavePeftModelCallback)
 
     if args.do_train:
         train_result = trainer.train()
