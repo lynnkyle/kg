@@ -90,7 +90,7 @@ class KGELlama(nn.Module):
         input_ids[input_ids == query_holder] = self.tokenizer.pad_token_id  # (batch_size, seq_len)
         input_ids[input_ids == entity_holder] = self.tokenizer.pad_token_id  # (batch_size, seq_len)
         input_emb = self.llama_model.model.embed_tokens(input_ids).clone()  # (batch_size, seq_len, embed_dim)
-        input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds  # (
+        input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds  # (batch_size, seq_len, embed_dim)
         input_emb[entity_position[:, 0], entity_position[:, 1]] = entity_embeds  # (batch_size, seq_len, embed_dim)
 
         # 训练/计算损失/微调 把输入送入模型并返回logits和loss
