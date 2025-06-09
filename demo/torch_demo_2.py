@@ -166,3 +166,9 @@ seq3 = torch.tensor([6])
 
 padded = pad_sequence([seq1, seq2, seq3], batch_first=True, padding_value=0)
 print(padded)
+
+# 19. torch.nonzero
+target = 15
+inputs = torch.tensor([[1, 2, 15, 3], [3, 15, 4, 5], [5, 6, 4, 15]])
+print(torch.nonzero(inputs == target))
+
