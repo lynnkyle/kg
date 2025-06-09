@@ -58,6 +58,13 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="ps@172.17.169.70:34 password (9)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="ps@172.17.174.152:22 password">
         <serverdata>
           <mappings>
