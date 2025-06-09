@@ -1,3 +1,8 @@
+import os
+
+os.environ['NCCL_P2P_DISABLE'] = '1'
+os.environ['NCCL_IB_DISABLE'] = '1'
+
 import argparse
 from typing import Optional
 
@@ -45,14 +50,56 @@ res = llama(torch.LongTensor([[0, 1, 2, 3]]))
 print(res)
 
 # generate
-tokenizer.pad_token = tokenizer.eos_token
-inputs = tokenizer(text=["what is birthday?", "why not go to travel?"], return_tensors="pt", padding=True)
-print(inputs)
-output = llamaForCausalLM.generate(**inputs, max_length=50)
-print(output)
-generated_text = tokenizer.batch_decode(output, skip_special_tokens=True)
-print("generated_text====>", generated_text)
+# tokenizer.pad_token = tokenizer.eos_token
+# inputs = tokenizer(text=["what is birthday?", "why not go to travel?"], return_tensors="pt", padding=True)
+# print(inputs)
+# output = llamaForCausalLM.generate(**inputs, max_length=50)
+# print(output)
+# generated_text = tokenizer.batch_decode(output, skip_special_tokens=True)
+# print("generated_text====>", generated_text)
 
+# generate与input_ids、input_embs
+# 1.传入 input_ids 生成时，模型自动将输入 prompt 和生成的 token 拼接返回
+prompt = 'The capital of France is'
+inputs = tokenizer(prompt, return_tensors="pt")
+output_ids = llamaForCausalLM.generate(input_ids=inputs.input_ids, max_new_tokens=20)
+text1 = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+print("输出text1是===>" + text1)
+
+# 2.传入 input_embs 生成返回的序列一般不包含输入 prompt 的 token id，只包含生成部分
+from mmkg.dift.utils import ModelArguments, DataArguments, TrainingArguments, EvaluationArguments, GenerationArguments
+from transformers import HfArgumentParser, set_seed, GenerationConfig, AutoTokenizer, AutoConfig, LlamaForCausalLM, \
+    Seq2SeqTrainer
+
+hf_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, GenerationArguments))
+model_args, data_args, training_args, generation_args, _ = hf_parser.parse_args_into_dataclasses(
+    return_remaining_strings=True)
+generation_config = GenerationConfig(**vars(generation_args))
+
+
+class MyLlama(object):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def generate(
+            self,
+            input_ids=None,
+            input_embeds=None,
+            **kwargs
+    ):
+        if input_embeds is not None:
+            return self.model.generate(inputs_embeds=input_embeds, generation_config=generation_config)
+        else:
+            return self.model.generate(input_ids=input_ids, **kwargs)
+
+
+my_llama = MyLlama(llamaForCausalLM)
+input_ids = inputs.input_ids
+input_embeds = my_llama.model.model.embed_tokens(input_ids).clone()
+output_embeds = my_llama.generate(input_embeds=input_embeds)
+text2 = tokenizer.decode(output_embeds.sequences[0])
+print("输出text2是===>" + text2)
 # predict
 
 """
