@@ -172,3 +172,14 @@ target = 15
 inputs = torch.tensor([[1, 2, 15, 3], [3, 15, 4, 5], [5, 6, 4, 15]])
 print(torch.nonzero(inputs == target))
 
+# 20. torch三维替换
+x = torch.tensor([[1, 2, 3], [2, 3, 4], [2, 3, 1]])
+query = torch.tensor([1, 2, 3, 4, 5], dtype=torch.float)
+pred = nn.Embedding(5, 5)
+print(pred)
+res = pred(x)
+print(res)
+
+idx = torch.nonzero(x == 2)
+res[idx[:, 0], idx[:, 1]] = query
+print(res)

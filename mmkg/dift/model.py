@@ -43,14 +43,14 @@ class EmbeddingModel(nn.Module):
 
     def forward(self, query_ids, entity_ids):
         """
-        :param query_ids: 查询id (batch_size,)
-        :param entity_ids: 实体id (batch_size * top_k,)
+        :param query_ids: 查询id [batch_size,]
+        :param entity_ids: 实体id [batch_size * top_k,]
         :return:
             query_embeds: [batch_size, 4096]
             ent_embeds: [batch_size * top_k, 4096]
         """
-        query_embeds = self.adapter(self.query_emb(query_ids))  # [batch_size, 768] -> [batch_size, 4096]
-        ent_embeds = self.adapter(self.ent_emb(entity_ids))  # [batch_size * top_k, 768] -> [batch_size * top_k, 4096]
+        query_embeds = self.adapter(self.query_emb(query_ids))  # (batch_size, 768) -> (batch_size, 4096)
+        ent_embeds = self.adapter(self.ent_emb(entity_ids))  # (batch_size * top_k, 768) -> (batch_size * top_k, 4096)
         return query_embeds, ent_embeds
 
 
@@ -78,14 +78,14 @@ class KGELlama(nn.Module):
         :param labels: 训练时的目标输出 [batch_size, seq_len]
         :param query_ids: 每条文本对应的查询id [batch_size,]
         :param entity_ids: 每条文本对应的k个实体id [batch_size, top_k]
-        :return:
+        :return: {loss: [1], logits: [batch_size, seq_len, num_token]}
         """
         query_holder = self.tokenizer.convert_tokens_to_ids(['[QUERY]'])[0]  # 32000
         entity_holder = self.tokenizer.convert_tokens_to_ids(['[ENTITY]'])[0]  # 32001
         query_position = torch.nonzero(input_ids == query_holder)  # (batch_size, 2)
         entity_position = torch.nonzero(input_ids == entity_holder)  # (batch_size * k, 2)
 
-        query_embeds, entity_embeds = self.kge_model(query_ids, entity_ids.view(-1))
+        query_embeds, entity_embeds = self.kge_model(query_ids, entity_ids.view(-1))  # (batch_size, 4096)
 
         input_ids[input_ids == query_holder] = self.tokenizer.pad_token_id  # (batch_size, seq_len)
         input_ids[input_ids == entity_holder] = self.tokenizer.pad_token_id  # (batch_size, seq_len)
@@ -93,7 +93,7 @@ class KGELlama(nn.Module):
         input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds  # (batch_size, seq_len, embed_dim)
         input_emb[entity_position[:, 0], entity_position[:, 1]] = entity_embeds  # (batch_size, seq_len, embed_dim)
 
-        # 训练/计算损失/微调 把输入送入模型并返回logits和loss
+        # 训练/计算损失/微调 把输入送入模型并返回loss和logits
         return self.llama_model(
             input_embeds=input_emb,
             attention_mask=attention_mask,
@@ -101,20 +101,25 @@ class KGELlama(nn.Module):
         )
 
     def generate(self, input_ids, query_ids, entity_ids, generation_config):
-        query_holder = self.tokenizer.convert_tokens_to_ids(['[QUERY]'])[0]
-        entity_holder = self.tokenizer.convert_tokens_to_ids(['[ENTITY]'])[0]
-        query_position = torch.nonzero(input_ids == query_holder)
-        entity_position = torch.nonzero(input_ids == entity_holder)
+        """
+        :param input_ids: [batch_size, seq_len]
+        :param query_ids: [batch_size,]
+        :param entity_ids: [batch_size, top_k]
+        :param generation_config:
+        :return: [batch_size, seq_len]
+        """
+        query_holder = self.tokenizer.convert_tokens_to_ids(['[QUERY]'])[0]  # 32000
+        entity_holder = self.tokenizer.convert_tokens_to_ids(['[ENTITY]'])[0]  # 32001
+        query_position = torch.nonzero(input_ids == query_holder)  # (batch_size, 2)
+        entity_position = torch.nonzero(input_ids == entity_holder)  # (batch_size * k, 2)
 
-        # ??? view(-1)的原因
-        query_embeds, entity_embeds = self.kge_model(query_ids, entity_ids.view(-1))
+        query_embeds, entity_embeds = self.kge_model(query_ids, entity_ids.view(-1))  # (batch_size, 4096)
 
-        input_ids[input_ids == query_holder] = self.tokenizer.pad_token_id
-        input_ids[input_ids == entity_holder] = self.tokenizer.pad_token_id
-        input_emb = self.llama_model.model.model.embed_tokens(input_ids).clone()
-        # ???
-        input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds
-        input_emb[entity_position[:, 0], entity_position[:, 1]] = entity_embeds
+        input_ids[input_ids == query_holder] = self.tokenizer.pad_token_id  # (batch_size, seq_len)
+        input_ids[input_ids == entity_holder] = self.tokenizer.pad_token_id  # (batch_size, seq_len)
+        input_emb = self.llama_model.model.model.embed_tokens(input_ids).clone()  # (batch_size, seq_len, emb_dim)
+        input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds  # (batch_size, seq_len, emb_dim)
+        input_emb[entity_position[:, 0], entity_position[:, 1]] = entity_embeds  # (batch_size, seq_len, emb_dim)
 
         # 生成文本 基于输入生成下一个token序列
         return self.llama_model.generate(

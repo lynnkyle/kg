@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import random
@@ -438,3 +439,9 @@ def make_dataset_mp(data, graph, output_file):
         data = p.map(partial(make_prompt, graph=graph), data)
     json.dump(data, open(output_file, 'w', encoding='utf-8'), ensure_ascii=False, indent=4)
     return data
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--llm_dir', type=str, default='')
