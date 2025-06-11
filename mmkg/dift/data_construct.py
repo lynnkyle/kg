@@ -49,7 +49,7 @@ def load_text(data_dir, tokenizer, max_seq_len):
 
 class RelationOccurrence(object):
     def __init__(self, data_dir):
-        self.triples = load_triples(os.path.join(data_dir, 'train.txt'))
+        self.triples = load_triples(os.path.join(data_dir, 'train2id.txt'))
         self.rel = self.get_relations()
         self.one_hop_triples, self.one_hop_relations = self.get_one_hop_triples()
         self.rel_occurrences = self.count_rel_occurrences()
@@ -103,9 +103,9 @@ class KnowledgeGraph(object):
         self.ent2id = {ent: idx for idx, ent in self.id2ent.items()}
 
         # Triplets Information
-        self.train_triplets = load_triples(os.path.join(args.data_dir, 'train.txt'))
-        self.valid_triplets = load_triples(os.path.join(args.data_dir, 'valid.txt'))
-        self.test_triplets = load_triples(os.path.join(args.data_dir, 'test.txt'))
+        self.train_triplets = load_triples(os.path.join(args.data_dir, 'train2id.txt'))
+        self.valid_triplets = load_triples(os.path.join(args.data_dir, 'valid2id.txt'))
+        self.test_triplets = load_triples(os.path.join(args.data_dir, 'test2id.txt'))
 
         # All Entity AND All Relation
         triplets = self.train_triplets
