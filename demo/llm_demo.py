@@ -70,40 +70,7 @@ print("输出text1是===>" + text1)
 # predict
 
 """
-    3. networkx图论与网络分析库, 用于创建、操作和研究复杂网络结构
-"""
-import networkx as nx
-
-# 创建图
-g = nx.Graph()
-# g = nx.MultiGraph(g) 多重图
-# g = nx.MultiDiGraph(g) 有向多重图
-g.add_node(1)
-g.add_nodes_from([2, 3])
-g.add_edge(1, 2, relation=3)
-g.add_edge(2, 3, relation=1)
-g.add_edge(3, 1, relation=2)
-# g.add_edges_from([(2, 3), (3, 1)])
-
-# 遍历图
-print(g)
-print("所有节点", g.nodes())
-print("所有边", g.edges())
-for u, v, data in g.edges(data=True):
-    print(f"{u} -> {v}: relation = {data['relation']}")
-
-# 计算最短路径
-path = nx.shortest_path(g, source=1, target=3)
-print("从1到3的最短路径:", path)
-
-# 可视化图
-# import matplotlib.pyplot as plt
-#
-# nx.draw(g, with_labels=True)
-# plt.show()
-
-"""
-    4.HuggingFace参数解析器
+    3.HuggingFace参数解析器
 """
 
 from dataclasses import dataclass, field
@@ -225,7 +192,7 @@ print("generation_args==>", generation_args)
 # print("training_args==>", training_args)
 
 """
-    5.
+    4.
     AutoModel: 加载模型
     get_peft_model: 加速/包装模型以支持多卡、混合精度等训练加速方式
 """
@@ -237,14 +204,10 @@ print('args==>', args)
 print(llama)
 
 """
-    6.AutoConfig
+    5.AutoConfig
 """
 from transformers import AutoConfig
 
 config = AutoConfig.from_pretrained('/home/ps/lzy/subaru/models--TheBloke--Llama-2-7B-fp16')
 print(config.hidden_size)
 print(config.hidden_act)
-
-"""
-    7.Seq2SeqTrainer
-"""

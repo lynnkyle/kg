@@ -47,6 +47,13 @@ def load_text(data_dir, tokenizer, max_seq_len):
     return ent2name, ent2desc, rel2name
 
 
+"""
+    计算关系共现性 
+    1. 某个实体的一跳三元组 / 一跳关系
+    2. 计算关系共现性 (同一个实体的一跳邻居,不同关系的共现频率)
+"""
+
+
 class RelationOccurrence(object):
     def __init__(self, data_dir):
         self.triples = load_triples(os.path.join(data_dir, 'train.txt'))
@@ -79,6 +86,7 @@ class RelationOccurrence(object):
     def count_rel_occurrences(self):
         """
         计算成对关系的共现次数
+        rel_occurrences: {(('base', 1), ('location', 1)): 534, }
         :return:
         """
         rel_occurrences = defaultdict(set)
@@ -109,8 +117,10 @@ class KnowledgeGraph(object):
 
         # All Entity AND All Relation
         triplets = self.train_triplets
-        self.ent_list = sorted(list(set([h for h, _, _ in triplets] + [t for _, _, t in triplets])))
-        self.rel_list = sorted(list(set([r for _, r, _ in triplets])))
+        self.ent_list = sorted(
+            list(set([h for h, _, _ in triplets] + [t for _, _, t in triplets])))  # 实体映射id集合 [/m/027rn, /m/030qb3t, ]
+        self.rel_list = sorted(list(set([r for _, r, _ in
+                                         triplets])))  # 关系映射id集合 [/location/country/second_level_divisions, /people/person/nationality]
         print(f'entity num: {len(self.ent_list)}; relation num: {len(self.rel_list)}')
         self.relation_occurrence = RelationOccurrence(data_dir=args.data_dir)
 
@@ -158,6 +168,7 @@ class KnowledgeGraph(object):
 
     def neighbors(self, ent):
         """
+        :param ent:
         :return:
         """
         out_edges = []
@@ -178,6 +189,15 @@ class KnowledgeGraph(object):
             edges = out_edges + in_edges
             random.shuffle(edges)
             return edges
+
+
+"""
+    数据预处理: 使用MyGo的嵌入Embeddings
+"""
+
+
+def MyGo_preprocess(args, graph: KnowledgeGraph):
+    pass
 
 
 """
