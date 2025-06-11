@@ -37,3 +37,48 @@ config.sex = '男'
 print(config['name'])
 print(config['age'])
 print(config['city'])
+
+"""
+    3. networkx图论与网络分析库, 用于创建、操作和研究复杂网络结构
+"""
+import networkx as nx
+
+# 创建图
+g = nx.Graph()
+# g = nx.MultiGraph(g) 多重图
+# g = nx.MultiDiGraph(g) 有向多重图
+g.add_node(1)
+g.add_nodes_from([2, 3])
+g.add_edge(1, 2, relation=3)
+g.add_edge(2, 3, relation=1)
+g.add_edge(3, 1, relation=2)
+# g.add_edges_from([(2, 3), (3, 1)])
+
+# 遍历图
+print(g)
+print("所有节点", g.nodes())
+print("所有边", g.edges())
+for u, v, data in g.edges(data=True):
+    print(f"{u} -> {v}: relation = {data['relation']}")
+
+# 计算最短路径
+path = nx.shortest_path(g, source=1, target=3)
+print("从1到3的最短路径:", path)
+
+# 可视化图
+# import matplotlib.pyplot as plt
+#
+# nx.draw(g, with_labels=True)
+# plt.show()
+
+"""
+    4. networkx图论的使用
+"""
+g = nx.DiGraph()
+g.add_edge(1, 2, relation=1)
+g.add_edge(1, 3, relation=1)
+g.add_edge(1, 4, relation=1)
+g.add_edge(2, 3, relation=2)
+g.add_edge(3, 4, relation=3)
+print(g.out_edges(1))
+print(g.out_edges(1, data=True))
