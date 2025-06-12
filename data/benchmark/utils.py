@@ -1,6 +1,10 @@
 import os
 import json
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from SPARQLWrapper import SPARQLWrapper, JSON
+from urllib.parse import quote
 
 
 def load_entity(data_dir):
@@ -37,44 +41,65 @@ def load_relation(data_dir):
     return rel_num, rel2id, id2rel
 
 
-def get_dbpedia_desc_json(name, lang='en'):
-    url = f'https://dbpedia.org/data/{name}.json'
-    response = requests.get(url)
-    if response.status_code != 200:
+def get_dbpedia_ent_abstract_sparql(ent, lang='en'):
+    endpoint_url = 'http://dbpedia.org/sparql'
+    sparql = SPARQLWrapper(endpoint_url)
+
+    full_uri = f"http://dbpedia.org/resource/{ent}"
+
+    # 使用完整 URI，避免语法错误
+    query = f"""
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    SELECT ?abstract WHERE {{
+        <{full_uri}> dbo:abstract ?abstract .
+        FILTER (lang(?abstract) = '{lang}')
+    }}
+    """
+
+    sparql.setQuery(query)
+    sparql.setReturnFormat(JSON)
+
+    try:
+        results = sparql.query().convert()
+        bindings = results.get('results', {}).get('bindings', [])
+        if bindings:
+            return bindings[0]['abstract']['value']
+        else:
+            return None
+    except Exception as e:
+        print(f"SPARQL query error: {e}")
         return None
 
-    data = response.json()
-    subject_uri = f'http://dbpedia.org/resource/{name}'
 
-    abstracts = data.get(subject_uri, {}).get('http://dbpedia.org/ontology/abstract', [])
-    for item in abstracts:
-        if item.get('lang', {}) == lang:
-            return item.get('value')
-    return None
+def get_dbpedia_rel_desc_json(name, lang='en'):
+    pass
 
 
 def save_ent2desc(data_dir):
     path = os.path.join(data_dir, 'entity.json')
     ent_num, ent2id, id2ent = load_entity(data_dir)
+    # id2ent = id2ent[:50]
     res_dict = {}
-    for ent in id2ent:
-        ent_name = ent.split('/')[-1]
-        desc = get_dbpedia_desc_json(ent_name, lang='en')
-        ent_dict = {'name': ent_name, 'desc': desc}
-        res_dict[ent] = ent_dict
-    json.dump(res_dict, open(path, 'w', encoding='utf-8'))
+
+    def process(ent):
+        ent_name = ent.strip('<>').split('/')[-1]
+        desc = get_dbpedia_ent_abstract_sparql(ent_name, lang='en')
+        return ent, {'name': ent_name, 'desc': desc}
+
+    # 开启线程池
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(process, ent): ent for ent in id2ent}
+        for future in as_completed(futures):
+            ent, ent_dict = future.result()
+            res_dict[ent] = ent_dict
+
+    # 写入 JSON 文件
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(res_dict, f, ensure_ascii=False, indent=2)
 
 
 def save_rel2desc(data_dir):
-    path = os.path.join(data_dir, 'relation.json')
-    rel_num, rel2id, id2rel = load_relation(data_dir)
-    res_dict = {}
-    for rel in id2rel:
-        rel_name = rel.split('/')[-1]
-        desc = get_dbpedia_desc_json(rel_name, lang='en')
-        rel_dict = {'name': rel_name, 'desc': desc}
-        res_dict[rel] = rel_dict
-    json.dump(res_dict, open(path, 'w', encoding='utf-8'))
+    pass
 
 
 def save_triple2id():

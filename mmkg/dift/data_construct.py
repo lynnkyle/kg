@@ -197,7 +197,35 @@ class KnowledgeGraph(object):
 
 
 def MyGo_preprocess(args, graph: KnowledgeGraph):
-    pass
+    data_dir = os.path.join('data/benchmark', args.dataset)
+    ent2name = graph.ent2name
+
+    def load_triples_with_ids(file_path: str):
+        triples = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            triple_num = int(lines[0].strip())
+            for line in lines[1:]:
+                h, r, t = line.strip().split('\t')
+                triples.append((int(h), int(r), int(t)))
+            assert triple_num == len(triples)
+        return triple_num, triples
+
+    def load_ent_or_rel_to_id(file_path: str):
+        x2id = {}
+        id2x = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            num = int(lines[0].strip())
+            for line in lines[1:]:
+                ent, idx = line.strip().split(' ')
+                x2id[ent] = idx
+                id2x.append(ent)
+            assert num == len(id2x)
+        return num, x2id, id2x
+
+    valid_path, test_path = os.path.join(), os.path.join()
+    valid_triples, test_triples = load_triples_with_ids(), load_triples_with_ids()
 
 
 """
