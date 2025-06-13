@@ -9,6 +9,7 @@ from functools import partial
 import numpy as np
 import networkx as nx
 import torch
+from transformers import AutoTokenizer
 
 
 def load_triples(file_path):
@@ -111,22 +112,22 @@ class KnowledgeGraph(object):
         self.ent2id = {ent: idx for idx, ent in self.id2ent.items()}
 
         # Triplets Information
-        self.train_triplets = load_triples(os.path.join(args.data_dir, 'train2id.txt'))
-        self.valid_triplets = load_triples(os.path.join(args.data_dir, 'valid2id.txt'))
-        self.test_triplets = load_triples(os.path.join(args.data_dir, 'test2id.txt'))
+        self.train_triples = load_triples(os.path.join(args.data_dir, 'train2id.txt'))
+        self.valid_triples = load_triples(os.path.join(args.data_dir, 'valid2id.txt'))
+        self.test_triples = load_triples(os.path.join(args.data_dir, 'test2id.txt'))
 
         # All Entity AND All Relation
-        triplets = self.train_triplets
+        triples = self.train_triples
         self.ent_list = sorted(
-            list(set([h for h, _, _ in triplets] + [t for _, _, t in triplets])))  # 实体映射id集合 [/m/027rn, /m/030qb3t, ]
+            list(set([h for h, _, _ in triples] + [t for _, _, t in triples])))  # 实体映射id集合 [/m/027rn, /m/030qb3t, ]
         self.rel_list = sorted(list(set([r for _, r, _ in
-                                         triplets])))  # 关系映射id集合 [/location/country/second_level_divisions, /people/person/nationality]
+                                         triples])))  # 关系映射id集合 [/location/country/second_level_divisions, /people/person/nationality]
         print(f'entity num: {len(self.ent_list)}; relation num: {len(self.rel_list)}')
         self.relation_occurrence = RelationOccurrence(data_dir=args.data_dir)
 
         # Graph Base On Train_Triplets
         self.graph = nx.MultiDiGraph()
-        for h, r, t in self.train_triplets:
+        for h, r, t in self.train_triples:
             self.graph.add_edge(h, t, relation=r)
         print(self.graph)
 
@@ -222,10 +223,31 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
                 x2id[ent] = idx
                 id2x.append(ent)
             assert num == len(id2x)
-        return num, x2id, id2x
+        return x2id, id2x
 
-    valid_path, test_path = os.path.join(), os.path.join()
-    valid_triples, test_triples = load_triples_with_ids(), load_triples_with_ids()
+    valid_path, test_path = os.path.join(data_dir, 'valid2id.txt'), os.path.join(data_dir, 'test2id.txt')
+    valid_triples, test_triples = load_triples_with_ids(valid_path), load_triples_with_ids(test_path)
+    triples = valid_triples + test_triples
+
+    assert len(valid_triples) == len(graph.valid_triples)
+    assert len(test_triples) == len(graph.test_triples)
+
+    ent_path, rel_path = os.path.join(data_dir, 'entity2id.txt'), os.path.join(data_dir, 'relation2id.txt')
+    ent2id, id2ent = load_ent_or_rel_to_id(ent_path)
+    rel2id, id2rel = load_ent_or_rel_to_id(rel_path)
+
+    assert len(ent2id) == len(graph.ent2id)
+    assert len(rel2id) == len(graph.rel2name)
+
+    ent_embeds = torch.from_numpy(np.load(os.path.join(data_dir, 'ent_embeds.npy')))
+    rel_embeds = torch.from_numpy(np.load(os.path.join(data_dir, 'rel_embeds.npy')))
+
+    query = np.load(os.path.join(data_dir, 'query.npy'))
+    ranks = np.load(os.path.join(data_dir, "rank.npy"))
+    topks = np.load(os.path.join(data_dir, "topk.npy"))
+    topks_scores = np.load(os.path.join(data_dir, 'topk_scores.npy'))
+
+    query_embeddings = torch.zeros(len(triples), args.dim)
 
 
 """
@@ -314,7 +336,7 @@ def TransE_preprocess(args, graph: KnowledgeGraph):
 
     data = []
     triplets = valid_triplets + test_triplets
-    for idx, (h, r, t) in enumerate(graph.valid_triplets + graph.test_triplets):
+    for idx, (h, r, t) in enumerate(graph.valid_triples + graph.test_triples):
         h2id, r2id, t2id = triplets[idx]
         assert all(query_embeddings[2 * idx] == ent_embeds[t2id] - rel_embeds[r2id])
         assert all(query_embeddings[2 * idx + 1] == ent_embeds[h2id] + rel_embeds[r2id])
@@ -360,8 +382,8 @@ def TransE_preprocess(args, graph: KnowledgeGraph):
     valid_output = data[:len(valid_triplets) * 2]
     test_output = data[len(valid_triplets) * 2:]
 
-    assert len(graph.valid_triplets) == len(valid_output) // 2
-    assert len(graph.test_triplets) == len(test_output) // 2
+    assert len(graph.valid_triples) == len(valid_output) // 2
+    assert len(graph.test_triples) == len(test_output) // 2
     return valid_output, test_output
 
 
@@ -492,9 +514,12 @@ def make_dataset_mp(data, graph, output_file):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--llm_dir', type=str, default='', help='choose your llm model')
-    parser.add_argument('--dataset', type=str, default='FB15K237', help='FB15K237 | WN18RR')
-    parser.add_argument('--output_folder', type)
+    parser.add_argument('--llm_dir', type=str, default='models--TheBloke--Llama-2-7B-fp16',
+                        help='choose your llm model')
+    parser.add_argument('--data_dir', type=str, default='/home/ps/lzy/kg/data/benchmark/DB15K')
+    parser.add_argument('--dataset', type=str, default='DB15K', help='FB15K237 | WN18RR')
+    parser.add_argument('--output_folder', type=str, default='data_top10', help='output folder for dataset')
+    parser.add_argument('--dim', type=int, default=768)
     parser.add_argument('--topK', type=int, default=20, help='number of candidates')
     parser.add_argument('--threshold', type=float, default=0.05, help='threshold for truncated sampling')
     parser.add_argument('--kge_model', type=str, default='SimKGC', help='TransE | SimKGC | CoLE')
@@ -502,9 +527,14 @@ if __name__ == '__main__':
     parser.add_argument('--add_entity_desc', type=bool, default=True)
     parser.add_argument('--max_seq_len', type=int, default=50, help='the max length of FB15K237')
     parser.add_argument('--add_neighbors', type=bool, default=True)
-    parser.add_argument('neighbor_num', type=int, default=10)
+    parser.add_argument('--neighbor_num', type=int, default=10)
     parser.add_argument('--condition_neighbors', type=bool, default=True, help='add condition or not')
     parser.add_argument('--shuffle_candidates', type=bool, default=False, help='shuffle candidates for analyses or not')
     args = parser.parse_args()
     random.seed(args.seed)
     np.random.seed(args.seed)
+    tokenizer = AutoTokenizer.from_pretrained(args.llm_dir, use_fast=False)
+
+    tokenizer.pad_token = tokenizer.eos_token
+    graph = KnowledgeGraph(args, tokenizer)
+    print(graph)

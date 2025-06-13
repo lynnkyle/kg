@@ -99,7 +99,15 @@ def save_ent2desc(data_dir):
 
 
 def save_rel2desc(data_dir):
-    pass
+    path = os.path.join(data_dir, 'relation.json')
+    rel_num, rel2id, id2rel = load_relation(data_dir)
+    res_dict = {}
+    for rel in id2rel:
+        rel_name = rel.strip('<>').split('/')[-1]
+        rel_dict = {'name': rel_name, 'desc': ''}
+        res_dict[rel] = rel_dict
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(res_dict, f, ensure_ascii=False, indent=2)
 
 
 def save_triple2id():
@@ -125,5 +133,5 @@ if __name__ == '__main__':
     # save_triple2text('DB15K', 'train2id.txt', 'train.txt')
     # save_triple2text('DB15K', 'test2id.txt', 'test.txt')
     # save_triple2text('DB15K', 'valid2id.txt', 'valid.txt')
-    save_ent2desc('DB15K')
-    pass
+    # save_ent2desc('DB15K')
+    save_rel2desc('DB15K')
