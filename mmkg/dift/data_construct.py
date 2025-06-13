@@ -199,7 +199,6 @@ class KnowledgeGraph(object):
 
 def MyGo_preprocess(args, graph: KnowledgeGraph):
     data_dir = os.path.join('data/benchmark', args.dataset)
-    ent2name = graph.ent2name
 
     def load_triples_with_ids(file_path: str):
         triples = []
@@ -239,15 +238,41 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
     assert len(ent2id) == len(graph.ent2id)
     assert len(rel2id) == len(graph.rel2name)
 
-    ent_embeds = torch.from_numpy(np.load(os.path.join(data_dir, 'ent_embeds.npy')))
-    rel_embeds = torch.from_numpy(np.load(os.path.join(data_dir, 'rel_embeds.npy')))
+    query_embedding = torch.load('query_embeddings.pt')
+    entity_embedding = torch.load('entity_embeddings.pt')
 
-    query = np.load(os.path.join(data_dir, 'query.npy'))
-    ranks = np.load(os.path.join(data_dir, "rank.npy"))
-    topks = np.load(os.path.join(data_dir, "topk.npy"))
+    with open(os.path.join(data_dir, 'querys.json'), encoding='utf-8') as f:
+        query = json.load(f)
+    ranks = np.load(os.path.join(data_dir, "ranks.npy"))
+    topks = np.load(os.path.join(data_dir, "topks.npy"))
     topks_scores = np.load(os.path.join(data_dir, 'topk_scores.npy'))
 
-    query_embeddings = torch.zeros(len(triples), args.dim)
+    data = []
+    for idx, (h, r, t) in enumerate(graph.valid_triples + graph.test_triples):
+        h_idx, r_idx, t_idx = triples[idx]
+        format, direction = query['format'], query['direction']
+        topk = [id2ent[e_idx] for e_idx in topks[idx].tolist()][:args.topk]
+        topk_scores = [score for score in topks_scores[idx].tolist()][:args.topk]
+        rank = int(ranks[idx])
+        topk_name = [graph.ent2name[ent] for ent in topk]
+        entity_ids = [graph.ent2id[ent] for ent in topk]
+
+        prediction = {
+            'query_id': idx,
+            'triples': (h, r, t),
+            'format': format,
+            'direction': direction,
+            'rank': rank,
+            'entity_ids': entity_ids,
+            'topk_ents': topk,
+            'topk_name': topk_name,
+            'topk_scores': topk_scores
+        }
+
+        data.append(prediction)
+    valid_output = data[:len(valid_triples)]
+    test_output = data[len(valid_triples):]
+    return valid_output, test_output
 
 
 """
