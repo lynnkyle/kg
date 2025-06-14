@@ -84,9 +84,9 @@ def save_numpy(valid_or_test, topK=20):
         head_score = \
             model.score(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,
                         rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
-        head_rank = get_rank(head_score, h)
+        head_rank = get_rank(head_score, h, kg.filter_dict[(-1, r, t)])
         rank_list.append(head_rank)
-        topks, topk_scores = get_topK(score=head_score, topK=topK)
+        topks, topk_scores = get_topK(head_score, h, kg.filter_dict[(-1, r, t)], topK)
         topk_list.append(topks)
         topk_score_list.append(topk_scores)
 
@@ -94,9 +94,9 @@ def save_numpy(valid_or_test, topK=20):
         tail_score = \
             model.score(torch.tensor([[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]).cuda(), ent_embs,
                         rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
-        tail_rank = get_rank(tail_score, t)
+        tail_rank = get_rank(tail_score, t, kg.filter_dict[(h, r, -1)])
         rank_list.append(tail_rank)
-        topks, topk_scores = get_topK(score=tail_score, topK=topK)
+        topks, topk_scores = get_topK(tail_score, t, kg.filter_dict[(h, r, -1)], topK)
         topk_list.append(topks)
         topk_score_list.append(topk_scores)
 
@@ -110,6 +110,10 @@ def save_numpy(valid_or_test, topK=20):
     np.save('topk_scores.npy', topk_score_list)
 
     return query_list, rank_list, topk_list, topk_score_list
+
+
+def save_json():
+    pass
 
 
 if __name__ == '__main__':
