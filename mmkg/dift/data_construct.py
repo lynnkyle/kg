@@ -12,12 +12,26 @@ import torch
 from transformers import AutoTokenizer
 
 
+def load_ent_or_rel(file_path: str):
+    id2x = {}
+    x2id = {}
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        num = int(lines[0].strip())
+        for line in lines[1:]:
+            ent, idx = line.strip().split(' ')
+            id2x[int(idx)] = ent
+            x2id[ent] = int(idx)
+        assert num == len(id2x)
+    return id2x, x2id
+
+
 def load_triples(file_path):
     triplets = []
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f.readlines():
             h, r, t = line.strip().split('\t')
-            triplets.append((h, r, t))
+            triplets.append((int(h), int(r), int(t)))
     return triplets
 
 
@@ -90,7 +104,7 @@ class RelationOccurrence(object):
         rel_occurrences: {(('base', 1), ('location', 1)): 534, }
         :return:
         """
-        rel_occurrences = defaultdict(set)
+        rel_occurrences = defaultdict(int)
         for entity, one_hop_triple in self.one_hop_triples.items():
             for h, r, t in one_hop_triple:
                 for r_sample, direct in self.one_hop_relations[entity]:
@@ -108,8 +122,7 @@ class KnowledgeGraph(object):
         self.args = args
         # Ent、Rel Information
         self.ent2name, self.ent2desc, self.rel2name = load_text(args.data_dir, tokenizer, args.max_seq_len)
-        self.id2ent = {idx: ent for idx, ent in enumerate(self.ent2name.keys())}
-        self.ent2id = {ent: idx for idx, ent in self.id2ent.items()}
+        self.id2ent, self.ent2id = load_ent_or_rel(os.path.join(args.data_dir, 'entity2id.txt'))
 
         # Triplets Information
         self.train_triples = load_triples(os.path.join(args.data_dir, 'train2id.txt'))
@@ -200,40 +213,16 @@ class KnowledgeGraph(object):
 def MyGo_preprocess(args, graph: KnowledgeGraph):
     data_dir = os.path.join('data/benchmark', args.dataset)
 
-    def load_triples_with_ids(file_path: str):
-        triples = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            triple_num = int(lines[0].strip())
-            for line in lines[1:]:
-                h, r, t = line.strip().split('\t')
-                triples.append((int(h), int(r), int(t)))
-            assert triple_num == len(triples)
-        return triple_num, triples
-
-    def load_ent_or_rel_to_id(file_path: str):
-        x2id = {}
-        id2x = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            num = int(lines[0].strip())
-            for line in lines[1:]:
-                ent, idx = line.strip().split(' ')
-                x2id[ent] = idx
-                id2x.append(ent)
-            assert num == len(id2x)
-        return x2id, id2x
-
     valid_path, test_path = os.path.join(data_dir, 'valid2id.txt'), os.path.join(data_dir, 'test2id.txt')
-    valid_triples, test_triples = load_triples_with_ids(valid_path), load_triples_with_ids(test_path)
+    valid_triples, test_triples = load_triples(valid_path), load_triples(test_path)
     triples = valid_triples + test_triples
 
     assert len(valid_triples) == len(graph.valid_triples)
     assert len(test_triples) == len(graph.test_triples)
 
     ent_path, rel_path = os.path.join(data_dir, 'entity2id.txt'), os.path.join(data_dir, 'relation2id.txt')
-    ent2id, id2ent = load_ent_or_rel_to_id(ent_path)
-    rel2id, id2rel = load_ent_or_rel_to_id(rel_path)
+    ent2id, id2ent = load_ent_or_rel(ent_path)
+    rel2id, id2rel = load_ent_or_rel(rel_path)
 
     assert len(ent2id) == len(graph.ent2id)
     assert len(rel2id) == len(graph.rel2name)
@@ -272,143 +261,6 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
         data.append(prediction)
     valid_output = data[:len(valid_triples)]
     test_output = data[len(valid_triples):]
-    return valid_output, test_output
-
-
-"""
-    数据预处理: 使用TransE的嵌入Embeddings
-"""
-
-
-def TransE_preprocess(args, graph: KnowledgeGraph):
-    def load_triplets_with_ids(file_path):
-        triplets = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            data_num = int(lines[0].strip())
-            for line in lines:
-                h, r, t = line.strip().split(' ')
-                triplets.append((int(h), int(r), int(t)))
-            assert data_num == len(triplets), f'{data_num} is not equal to {len(triplets)}'
-        return triplets
-
-    def load_ent_or_rel_with_id(file_path):
-        ent2id = dict()
-        id2ent = dict()
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            num = int(lines[0].strip())
-            for line in lines:
-                ent, id = line.strip().split('\t')
-                id = int(id)
-                ent2id[ent] = id2ent
-                id2ent[id] = ent
-            assert num == len(ent2id)
-        return ent2id, id2ent
-
-    TransE_dir = os.path.join(args.data_dir, args.kge_model)  # DIFT/FB15K237/TransE || DIFT/WN18RR/TransE
-
-    ent2name = graph.ent2name
-
-    valid_triplets = load_triplets_with_ids(os.path.join(TransE_dir, 'valid2id.txt'))
-    # assert len(valid_triplets) == len(graph.valid_triplets)
-    test_triplets = load_triplets_with_ids(os.path.join(TransE_dir, 'test2id.txt'))
-    # assert len(test_triplets) == len(graph.test_triplets)
-
-    ent2id, id2ent = load_ent_or_rel_with_id(os.path.join(TransE_dir, 'entity2id.txt'))
-    # assert len(id2ent) == len(graph.id2ent)
-    rel2id, id2rel = load_ent_or_rel_with_id(os.path.join(TransE_dir, 'relation2id.txt'))
-    # assert len(id2rel) == len(graph.rel2name)
-
-    # [!!!important]
-    entity_embeddings_path = os.path.join(TransE_dir, 'entity_embeddings.pt')
-    if not os.path.exists(entity_embeddings_path):
-        ent_embeds = torch.from_numpy(np.load(os.path.join(TransE_dir, 'embeds_ent.npy')))
-        # assert ent_embeds.shape[0] == len(graph.id2ent)
-        new_ent_emb = torch.zeros_like(ent_embeds)
-        for idx in range(ent_embeds.shape[0]):
-            ent = id2ent[idx]
-            new_ent_emb[graph.ent2id[ent]] = ent_embeds[idx]  # ???
-        assert new_ent_emb.shape[0] == len(graph.ent2id)
-        torch.save(new_ent_emb, entity_embeddings_path)
-
-    # [!!!important]
-    query_embeddings_path = os.path.join(TransE_dir, 'query_embeddings.pt')
-    if not os.path.exists(query_embeddings_path):
-        h_embeds = torch.from_numpy(np.load(os.path.join(TransE_dir, 'embed_h.npy')))
-        r_embeds = torch.from_numpy(np.load(os.path.join(TransE_dir, 'embed_r.npy')))
-        t_embeds = torch.from_numpy(np.load(os.path.join(TransE_dir, 'embed_t.npy')))
-        triplets = valid_triplets + test_triplets
-        assert h_embeds.shape[0] == r_embeds.shape[0] == t_embeds.shape[0] == len(triplets)
-
-        query_embeddings = torch.zeros(2 * len(triplets), h_embeds.shape[-1])
-        idx = 0
-        for i in range(len(triplets)):
-            query_embeddings[idx] = t_embeds[i] - r_embeds[i]
-            query_embeddings[idx + 1] = h_embeds[i] + r_embeds[i]
-            idx += 2
-        torch.save(query_embeddings, query_embeddings_path)
-
-    query_embeds = torch.load(query_embeddings_path, map_location='cpu')
-    ent_embeds = torch.from_numpy(np.load(os.path.join(TransE_dir, 'embeds_ent.npy')))
-    rel_embeds = torch.from_numpy(np.load(os.path.join(TransE_dir, 'embeds_rel.npy')))
-    head_ranks = np.load(os.path.join(TransE_dir, 'head_rank.npy'))
-    head_topks = np.load(os.path.join(TransE_dir, 'head_topk.npy'))
-    head_topks_scores = np.load(os.path.join(TransE_dir, 'head_topk_score.npy'))
-    tail_ranks = np.load(os.path.join(TransE_dir, 'tail_rank.npy'))
-    tail_topks = np.load(os.path.join(TransE_dir, 'tail_topk.npy'))
-    tail_topks_scores = np.load(os.path.join(TransE_dir, 'tail_topk_score.npy'))
-
-    data = []
-    triplets = valid_triplets + test_triplets
-    for idx, (h, r, t) in enumerate(graph.valid_triples + graph.test_triples):
-        h2id, r2id, t2id = triplets[idx]
-        assert all(query_embeddings[2 * idx] == ent_embeds[t2id] - rel_embeds[r2id])
-        assert all(query_embeddings[2 * idx + 1] == ent_embeds[h2id] + rel_embeds[r2id])
-
-        tail_topk = [id2ent[e_idx] for e_idx in tail_topks[idx].toList()][:args.topK]  # 当前样本的topK个尾实体url
-        tail_topk_scores = [score * 1e-5 for score in
-                            tail_topks_scores[idx].toList()[:args.topK]]  # 当前样本的topK个尾实体的得分
-        tail_rank = int(tail_ranks[idx])  # 当前样本真实尾实体在预测排序中的排名
-        tail_topk_names = [ent2name[ent] for ent in tail_topks]  # 当前样本的topK个尾实体名称
-        tail_entity_ids = [graph.ent2idx[ent] for ent in tail_topks]  # 当前样本的topK个尾实体对应KnowledgeGraph的id
-
-        head_topk = [id2ent[e_idx] for e_idx in head_topks[idx].toList()][:args.topK]  # 当前样本的topK个头实体url
-        head_topk_scores = [score * 1e-5 for score in
-                            head_topks_scores[idx].toList()[:args.topK]]  # 当前样本的topK个头实体的得分
-        head_rank = int(head_ranks[idx])  # 当前样本真实头实体在预测排序中的排名
-        head_topk_names = [ent2name[ent] for ent in head_topks]  # 当前样本的topK个头实体名称
-        head_entity_ids = [graph.ent2idx[ent] for ent in head_topks]  # 当前样本的topK个头实体对应KnowledgeGraph的id
-
-        head_prediction = {
-            'triplet': (t, r, h),
-            'inverse': True,
-            'topk_ents': head_topk,
-            'topk_names': head_topk_names,
-            'topk_scores': head_topk_scores,
-            'rank': head_rank,
-            'query_id': 2 * idx,
-            'entity_ids': head_entity_ids
-        }
-
-        tail_prediction = {
-            'triplet': (h, r, t),
-            'inverse': False,
-            'topk_ents': tail_topk,
-            'topk_names': tail_topk_names,
-            'topk_scores': tail_topk_scores,
-            'rank': tail_rank,
-            'query_id': 2 * idx + 1,
-            'entity_ids': tail_entity_ids
-        }
-
-        data.append(tail_prediction)
-        data.append(head_prediction)
-    valid_output = data[:len(valid_triplets) * 2]
-    test_output = data[len(valid_triplets) * 2:]
-
-    assert len(graph.valid_triples) == len(valid_output) // 2
-    assert len(graph.test_triples) == len(test_output) // 2
     return valid_output, test_output
 
 
@@ -563,3 +415,4 @@ if __name__ == '__main__':
     tokenizer.pad_token = tokenizer.eos_token
     graph = KnowledgeGraph(args, tokenizer)
     print(graph)
+    MyGo_preprocess(args, graph)

@@ -112,10 +112,6 @@ def save_numpy(valid_or_test, topK=20):
     return query_list, rank_list, topk_list, topk_score_list
 
 
-def save_json():
-    pass
-
-
 if __name__ == '__main__':
     """
         代码可复现
