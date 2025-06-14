@@ -151,6 +151,21 @@ class MyGo(nn.Module):
             score = torch.inner(ctx_out, emb_ent[:-1])  # [batch_size, num_entity, 1] -> [batch_size, num_entity] 降维
         return score
 
+    def query(self, triples, emb_ent, emb_rel):
+        """
+        :param triples: [batch_size, 3]
+        :param emb_ent: [num_ent, str_dim]
+        :param emb_rel: [num_rel, str_dim]
+        :return: [batch_size, num_entity]
+        """
+        h_seq = emb_ent[triples[:, 0] - self.num_rel].unsqueeze(1) + self.pos_head  # [batch_size, 1, str_dim]
+        r_seq = emb_ent[triples[:, 1] - self.num_ent].unsqueeze(1) + self.pos_rel  # [batch_size, 1, str_dim]
+        t_seq = emb_ent[triples[:, 2] - self.num_rel].unsqueeze(1) + self.pos_tail  # [batch_size, 1, str_dim]
+        triple_seq = torch.cat([h_seq, r_seq, t_seq], dim=1)  # [batch_size, 3, str_dim]
+        triple_out = self.decoder(triple_seq)  # [batch_size, 3, str_dim]
+        query_out = triple_out[triples == self.num_ent + self.num_rel]  # [batch_size, str_dim]
+        return query_out
+
     """
         MYGO 模型利用 Transformer 编码器中的 dropout 机制人为制造多模态嵌入的细微变化，相当于一种轻量级数据增强。
         然后，它在批量（batch）中使用对比学习，让模型学会关注真正重要的信息，提高实体表示的区分性和鲁棒性。

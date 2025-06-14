@@ -65,10 +65,10 @@ def get_dbpedia_ent_abstract_sparql(ent, lang='en'):
         if bindings:
             return bindings[0]['abstract']['value']
         else:
-            return None
+            return ""
     except Exception as e:
         print(f"SPARQL query error: {e}")
-        return None
+        return ""
 
 
 def get_dbpedia_rel_desc_json(name, lang='en'):
@@ -78,7 +78,6 @@ def get_dbpedia_rel_desc_json(name, lang='en'):
 def save_ent2desc(data_dir):
     path = os.path.join(data_dir, 'entity.json')
     ent_num, ent2id, id2ent = load_entity(data_dir)
-    # id2ent = id2ent[:50]
     res_dict = {}
 
     def process(ent):
@@ -133,5 +132,5 @@ if __name__ == '__main__':
     # save_triple2text('DB15K', 'train2id.txt', 'train.txt')
     # save_triple2text('DB15K', 'test2id.txt', 'test.txt')
     # save_triple2text('DB15K', 'valid2id.txt', 'valid.txt')
-    # save_ent2desc('DB15K')
-    save_rel2desc('DB15K')
+    save_ent2desc('DB15K')
+    # save_rel2desc('DB15K')
