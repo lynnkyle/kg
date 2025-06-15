@@ -121,13 +121,14 @@ class KnowledgeGraph(object):
     def __init__(self, args, tokenizer):
         self.args = args
         # Ent、Rel Information
-        self.ent2name, self.ent2desc, self.rel2name = load_text(args.data_dir, tokenizer, args.max_seq_len)
-        self.id2ent, self.ent2id = load_ent_or_rel(os.path.join(args.data_dir, 'entity2id.txt'))
+        data_dir = os.path.join(args.data_dir, args.dataset)
+        self.ent2name, self.ent2desc, self.rel2name = load_text(data_dir, tokenizer, args.max_seq_len)
+        self.id2ent, self.ent2id = load_ent_or_rel(os.path.join(data_dir, 'entity2id.txt'))
 
         # Triplets Information
-        self.train_triples = load_triples(os.path.join(args.data_dir, 'train2id.txt'))
-        self.valid_triples = load_triples(os.path.join(args.data_dir, 'valid2id.txt'))
-        self.test_triples = load_triples(os.path.join(args.data_dir, 'test2id.txt'))
+        self.train_triples = load_triples(os.path.join(data_dir, 'train2id.txt'))
+        self.valid_triples = load_triples(os.path.join(data_dir, 'valid2id.txt'))
+        self.test_triples = load_triples(os.path.join(data_dir, 'test2id.txt'))
 
         # All Entity AND All Relation
         triples = self.train_triples
@@ -136,7 +137,7 @@ class KnowledgeGraph(object):
         self.rel_list = sorted(list(set([r for _, r, _ in
                                          triples])))  # 关系映射id集合 [/location/country/second_level_divisions, /people/person/nationality]
         print(f'entity num: {len(self.ent_list)}; relation num: {len(self.rel_list)}')
-        self.relation_occurrence = RelationOccurrence(data_dir=args.data_dir)
+        self.relation_occurrence = RelationOccurrence(data_dir=data_dir)
 
         # Graph Base On Train_Triplets
         self.graph = nx.MultiDiGraph()
@@ -211,7 +212,9 @@ class KnowledgeGraph(object):
 
 
 def MyGo_preprocess(args, graph: KnowledgeGraph):
-    data_dir = os.path.join('data/benchmark', args.dataset)
+    data_dir = os.path.join(args.data_dir, args.dataset)
+
+    model_path = os.path.join(data_dir, 'MyGo')
 
     valid_path, test_path = os.path.join(data_dir, 'valid2id.txt'), os.path.join(data_dir, 'test2id.txt')
     valid_triples, test_triples = load_triples(valid_path), load_triples(test_path)
@@ -221,44 +224,61 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
     assert len(test_triples) == len(graph.test_triples)
 
     ent_path, rel_path = os.path.join(data_dir, 'entity2id.txt'), os.path.join(data_dir, 'relation2id.txt')
-    ent2id, id2ent = load_ent_or_rel(ent_path)
-    rel2id, id2rel = load_ent_or_rel(rel_path)
+    id2ent, ent2id = load_ent_or_rel(ent_path)
+    id2rel, rel2id = load_ent_or_rel(rel_path)
 
     assert len(ent2id) == len(graph.ent2id)
     assert len(rel2id) == len(graph.rel2name)
 
-    query_embedding = torch.load('query_embeddings.pt')
-    entity_embedding = torch.load('entity_embeddings.pt')
+    query_embedding = torch.load(os.path.join(model_path, 'query_embeddings.pt'))
+    entity_embedding = torch.load(os.path.join(model_path, 'entity_embeddings.pt'))
 
-    with open(os.path.join(data_dir, 'querys.json'), encoding='utf-8') as f:
+    with open(os.path.join(model_path, 'query.json'), encoding='utf-8') as f:
         query = json.load(f)
-    ranks = np.load(os.path.join(data_dir, "ranks.npy"))
-    topks = np.load(os.path.join(data_dir, "topks.npy"))
-    topks_scores = np.load(os.path.join(data_dir, 'topk_scores.npy'))
+    ranks = np.load(os.path.join(model_path, "ranks.npy"))
+    topks = np.load(os.path.join(model_path, "topks.npy"))
+    topks_scores = np.load(os.path.join(model_path, 'topk_scores.npy'))
 
     data = []
     for idx, (h, r, t) in enumerate(graph.valid_triples + graph.test_triples):
         h_idx, r_idx, t_idx = triples[idx]
-        format, direction = query['format'], query['direction']
-        topk = [id2ent[e_idx] for e_idx in topks[idx].tolist()][:args.topk]
-        topk_scores = [score for score in topks_scores[idx].tolist()][:args.topk]
-        rank = int(ranks[idx])
-        topk_name = [graph.ent2name[ent] for ent in topk]
-        entity_ids = [graph.ent2id[ent] for ent in topk]
 
-        prediction = {
-            'query_id': idx,
-            'triples': (h, r, t),
-            'format': format,
-            'direction': direction,
-            'rank': rank,
-            'entity_ids': entity_ids,
-            'topk_ents': topk,
-            'topk_name': topk_name,
-            'topk_scores': topk_scores
+        head_query = query[2 * idx]
+        head_rank = int(ranks[2 * idx])
+        head_topk = [id2ent[e_idx] for e_idx in topks[2 * idx].tolist()][:args.topk]
+        head_topk_scores = [score for score in topks_scores[2 * idx].tolist()[:args.topk]]
+        head_topk_names = [graph.ent2name[ent] for ent in head_topk]
+        head_entity_ids = [graph.ent2id[ent] for ent in head_topk]
+
+        tail_query = query[2 * idx + 1]
+        tail_rank = int(ranks[2 * idx + 1])
+        tail_topk = [id2ent[e_idx] for e_idx in topks[2 * idx + 1].tolist()[:args.topk]]
+        tail_topk_scores = [score for score in topks_scores[2 * idx + 1].tolist()[:args.topk]]
+        tail_topk_names = [graph.ent2name[ent] for ent in tail_topk]
+        tail_entity_ids = [graph.ent2id[ent] for ent in tail_topk]
+
+        head_prediction = {
+            'id': 2 * idx,
+            'query': head_query,
+            'rank': head_rank,
+            'topk': head_topk,
+            'topk_names': head_topk_names,
+            'topk_scores': head_topk_scores,
+            'entity_ids': head_entity_ids
         }
+        data.append(head_prediction)
 
-        data.append(prediction)
+        tail_prediction = {
+            'id': 2 * idx + 1,
+            'query': tail_query,
+            'rank': tail_rank,
+            'topk': tail_topk,
+            'topk_names': tail_topk_names,
+            'topk_scores': tail_topk_scores,
+            'entity_ids': tail_entity_ids
+        }
+        data.append(tail_prediction)
+
     valid_output = data[:len(valid_triples)]
     test_output = data[len(valid_triples):]
     return valid_output, test_output
@@ -278,8 +298,8 @@ def divide_valid(args, data: list):
     # 计算实体的置信度得分
     score_list = []
     for item in train_data:
-        if item['rank'] in args.topK:
-            score_list.append(100 * item['score'][item['rank'] - 1] + 1 / item['rank'])
+        if item['rank'] <= args.topk:
+            score_list.append(100 * item['topk_scores'][item['rank'] - 1] + 1 / item['rank'])
         else:
             score_list.append(1 / item['rank'])
 
@@ -391,15 +411,15 @@ def make_dataset_mp(data, graph, output_file):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--llm_dir', type=str, default='models--TheBloke--Llama-2-7B-fp16',
+    parser.add_argument('--llm_dir', type=str, default='/home/ps/lzy/kg/mmkg/dift/models--TheBloke--Llama-2-7B-fp16',
                         help='choose your llm model')
-    parser.add_argument('--data_dir', type=str, default='/home/ps/lzy/kg/data/benchmark/DB15K')
+    parser.add_argument('--data_dir', type=str, default='')
     parser.add_argument('--dataset', type=str, default='DB15K', help='FB15K237 | WN18RR')
-    parser.add_argument('--output_folder', type=str, default='data_top10', help='output folder for dataset')
+    parser.add_argument('--output_dir', type=str, default='MyGo/data_KGELlama', help='output folder for dataset')
     parser.add_argument('--dim', type=int, default=768)
-    parser.add_argument('--topK', type=int, default=20, help='number of candidates')
+    parser.add_argument('--topk', type=int, default=20, help='number of candidates')
     parser.add_argument('--threshold', type=float, default=0.05, help='threshold for truncated sampling')
-    parser.add_argument('--kge_model', type=str, default='SimKGC', help='TransE | SimKGC | CoLE')
+    parser.add_argument('--kge_model', type=str, default='MyGo', help='TransE | SimKGC | CoLE')
     parser.add_argument('--add_special_tokens', type=bool, default=True, help='add special tokens')
     parser.add_argument('--add_entity_desc', type=bool, default=True)
     parser.add_argument('--max_seq_len', type=int, default=50, help='the max length of FB15K237')
@@ -414,5 +434,14 @@ if __name__ == '__main__':
 
     tokenizer.pad_token = tokenizer.eos_token
     graph = KnowledgeGraph(args, tokenizer)
-    print(graph)
-    MyGo_preprocess(args, graph)
+
+    if args.kge_model == 'MyGo':
+        valid_data, test_data = MyGo_preprocess(args, graph)
+    else:
+        raise NotImplementedError()
+
+    llm_train, llm_valid = divide_valid(args, valid_data)
+
+    train_examples = make_dataset_mp(llm_train, graph, os.path.join(args.output_dir, 'train.json'))
+    valid_examples = make_dataset_mp(llm_valid, graph, os.path.join(args.output_dir, 'valid.json'))
+    test_examples = make_dataset_mp(test_data, graph, os.path.join(args.output_dir, 'test.json'))

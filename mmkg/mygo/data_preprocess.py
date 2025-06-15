@@ -44,38 +44,12 @@ def valid_eval_metric(valid_or_test):
 
 
 @torch.no_grad()
-def save_query_embedding(valid_or_test):
-    query_embeddings = []
-    ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
-    for triple in valid_or_test:
-        # for triple in tqdm(valid_or_test):
-        h, r, t = triple
-        head_query = \
-            model.query(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,
-                        rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
-        query_embeddings.append(head_query)
-        tail_query = \
-            model.query(torch.tensor([[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]).cuda(), ent_embs,
-                        rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
-        query_embeddings.append(tail_query)
-    query_embeddings = torch.tensor(query_embeddings)
-    torch.save(query_embeddings, 'query_embeddings.pt')
-    return query_embeddings
-
-
-@torch.no_grad()
-def save_entity_embedding():
-    entity_embeddings, relation_embeddings = model()
-    torch.save(entity_embeddings, 'entity_embeddings.pt')
-    return entity_embeddings
-
-
-@torch.no_grad()
 def save_numpy(valid_or_test, topK=20):
     query_list = []
     rank_list = []
     topk_list = []
     topk_score_list = []
+    query_embeds = []
     ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
     for triple in valid_or_test:
         # for triple in tqdm(valid_or_test):
@@ -89,6 +63,10 @@ def save_numpy(valid_or_test, topK=20):
         topks, topk_scores = get_topK(head_score, h, kg.filter_dict[(-1, r, t)], topK)
         topk_list.append(topks)
         topk_score_list.append(topk_scores)
+        query_embeds.append(
+            model.query(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,
+                        rel_embs)[0].detach().cpu().numpy()
+        )
 
         query_list.append(f'({h}, {r}, ?)')
         tail_score = \
@@ -99,6 +77,10 @@ def save_numpy(valid_or_test, topK=20):
         topks, topk_scores = get_topK(tail_score, t, kg.filter_dict[(h, r, -1)], topK)
         topk_list.append(topks)
         topk_score_list.append(topk_scores)
+        query_embeds.append(
+            model.query(torch.tensor([[kg.num_ent + kg.num_rel, r + kg.num_ent, t + kg.num_rel]]).cuda(), ent_embs,
+                        rel_embs)[0].detach().cpu().numpy()
+        )
 
     rank_list = np.array(rank_list)
     topk_list = np.array(topk_list)
@@ -108,8 +90,10 @@ def save_numpy(valid_or_test, topK=20):
     np.save('ranks.npy', rank_list)
     np.save('topks.npy', topk_list)
     np.save('topk_scores.npy', topk_score_list)
-
-    return query_list, rank_list, topk_list, topk_score_list
+    torch.save(ent_embs, 'entity_embeddings.pt')
+    query_embeds = torch.tensor(query_embeds)
+    torch.save(query_embeds, 'query_embeddings.pt')
+    return query_list, rank_list, topk_list, topk_score_list, ent_embs, query_embeds
 
 
 if __name__ == '__main__':
@@ -190,14 +174,10 @@ if __name__ == '__main__':
 
     model.eval()
     valid_and_test = kg.valid + kg.test
-    query_embeddings = save_query_embedding(valid_and_test)
-    print(query_embeddings)
-    print(query_embeddings.shape)
-    entity_embeddings = save_entity_embedding()
-    print(entity_embeddings)
-    print(entity_embeddings.shape)
-    query_list, rank_list, topk_list, topk_score_list = save_numpy(valid_and_test)
+    query_list, rank_list, topk_list, topk_score_list, ent_embs, query_embs = save_numpy(valid_and_test)
     print(len(query_list))
     print(len(rank_list))
     print(len(topk_list))
     print(len(topk_score_list))
+    print(ent_embs.shape)
+    print(query_embs.shape)
