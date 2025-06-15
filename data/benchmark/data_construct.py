@@ -240,9 +240,7 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
     topks_scores = np.load(os.path.join(model_path, 'topk_scores.npy'))
 
     data = []
-    for idx, (h, r, t) in enumerate(graph.valid_triples + graph.test_triples):
-        h_idx, r_idx, t_idx = triples[idx]
-
+    for idx, (h_idx, r_idx, t_idx) in enumerate(graph.valid_triples + graph.test_triples):
         head_query = query[2 * idx]
         head_rank = int(ranks[2 * idx])
         head_topk = [id2ent[e_idx] for e_idx in topks[2 * idx].tolist()][:args.topk]
@@ -260,8 +258,10 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
         head_prediction = {
             'id': 2 * idx,
             'query': head_query,
+            'triple': (id2ent[h_idx], id2rel[r_idx], id2ent[t_idx]),
+            'triple2id': (h_idx, r_idx, t_idx),
             'rank': head_rank,
-            'topk': head_topk,
+            'topk_ents': head_topk,
             'topk_names': head_topk_names,
             'topk_scores': head_topk_scores,
             'entity_ids': head_entity_ids
@@ -271,8 +271,10 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
         tail_prediction = {
             'id': 2 * idx + 1,
             'query': tail_query,
+            'triple': (id2ent[h_idx], id2rel[r_idx], id2ent[t_idx]),
+            'triple2id': (h_idx, r_idx, t_idx),
             'rank': tail_rank,
-            'topk': tail_topk,
+            'topk_ents': tail_topk,
             'topk_names': tail_topk_names,
             'topk_scores': tail_topk_scores,
             'entity_ids': tail_entity_ids
@@ -295,7 +297,7 @@ def divide_valid(args, data: list):
     valid_data = data[:int(len(data) * 0.1)]
     train_data = data[int(len(data) * 0.1):]
 
-    # 计算实体的置信度得分
+    # 评估每个训练样本的置信度得分
     score_list = []
     for item in train_data:
         if item['rank'] <= args.topk:
@@ -325,17 +327,15 @@ def make_prompt(input_dict, graph: KnowledgeGraph):
     """
     args = graph.args
 
-    tail_prediction = not input_dict['reverse']
-    if tail_prediction:
-        h, r, t = input_dict['triplets']
-    else:
-        t, r, h = input_dict['triplets']
+    idx = input_dict['id']
 
+    h, r, t = input_dict['triple']
     ent2name, ent2desc, rel2name, = graph.ent2name, graph.ent2desc, graph.rel2name
     h_name, h_desc = ent2name[h], ent2desc[h]
     r_name = rel2name[r]
     t_name, t_desc = ent2name[t], ent2desc[t]
 
+    # 候选实体的位置是否打乱
     if args.shuffle_candidates:
         topk_ents = input_dict['topk_ents']
         choices = deepcopy(topk_ents)
@@ -345,7 +345,7 @@ def make_prompt(input_dict, graph: KnowledgeGraph):
         choices = [graph.ent2name[ent] for ent in choices]
     else:
         choices = input_dict['topk_names']
-    input_dict['choices'] = choices  # ???可以不要choice直接在topk_names上进行修改
+    input_dict['choices'] = choices
 
     if args.add_special_tokens:
         try:
@@ -357,7 +357,7 @@ def make_prompt(input_dict, graph: KnowledgeGraph):
 
     choices = '[' + '; '.join(choices) + ']'
 
-    if tail_prediction:
+    if idx % 2 == 1:
         if args.add_special_tokens:
             prompt = f'Here is a triplet with tail entity t unknown: ({h_name}, {r_name}, t [QUERY]).\n\n'
         else:
@@ -415,7 +415,7 @@ if __name__ == '__main__':
                         help='choose your llm model')
     parser.add_argument('--data_dir', type=str, default='')
     parser.add_argument('--dataset', type=str, default='DB15K', help='FB15K237 | WN18RR')
-    parser.add_argument('--output_dir', type=str, default='MyGo/data_KGELlama', help='output folder for dataset')
+    parser.add_argument('--output_dir', type=str, default='DB15K/MyGo/data_KGELlama', help='output folder for dataset')
     parser.add_argument('--dim', type=int, default=768)
     parser.add_argument('--topk', type=int, default=20, help='number of candidates')
     parser.add_argument('--threshold', type=float, default=0.05, help='threshold for truncated sampling')
@@ -445,3 +445,7 @@ if __name__ == '__main__':
     train_examples = make_dataset_mp(llm_train, graph, os.path.join(args.output_dir, 'train.json'))
     valid_examples = make_dataset_mp(llm_valid, graph, os.path.join(args.output_dir, 'valid.json'))
     test_examples = make_dataset_mp(test_data, graph, os.path.join(args.output_dir, 'test.json'))
+
+    args = vars(args)
+
+    print('Done!!!')
