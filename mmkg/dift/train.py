@@ -34,7 +34,7 @@ class ModelArguments:
 class DataArguments:
     dataset: str = field(default=None, metadata={'help': 'Fine Turn On Which Dataset'})
     train_path: str = field(default=None, metadata={'help': 'Path For Train File'})
-    valid_path: str = field(default=None, metadata={'help': 'Path For Valid File'})
+    eval_path: str = field(default=None, metadata={'help': 'Path For Valid File'})
     test_path: str = field(default=None, metadata={'help': 'Path For Test File'})
     source_max_len: int = field(default=2048, metadata={'help': 'Maximum Source Sequence Length'})
     target_max_len: int = field(default=64, metadata={'help': 'Maximum Target Sequence Length'})
