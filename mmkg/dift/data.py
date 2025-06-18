@@ -22,9 +22,9 @@ class KGDataModule(object):
         self.args = args
         self.tokenizer = tokenizer
 
-        train_example = json.load(open(args.train_file, 'r', encoding='utf-8'))
-        valid_example = json.load(open(args.eval_file, 'r', encoding='utf-8'))
-        test_example = json.load(open(args.test_file, 'r', encoding='utf-8'))
+        train_example = json.load(open(args.train_path, 'r', encoding='utf-8'))
+        valid_example = json.load(open(args.eval_path, 'r', encoding='utf-8'))
+        test_example = json.load(open(args.test_path, 'r', encoding='utf-8'))
 
         self.train_dataset = KGDataset(train_example)
         self.valid_dataset = KGDataset(valid_example)

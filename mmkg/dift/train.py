@@ -115,7 +115,7 @@ def train():
         return_remaining_strings=True)
     training_args.generation_config = GenerationConfig(**vars(generation_args))
     args = argparse.Namespace(**vars(model_args), **vars(data_args), **vars(training_args))
-    assert args.model_class in ['KGELLama', 'KGEBert']
+    assert args.model_class in ['KGELlama', 'KGEBert']
     if args.kge_model == 'TransE':
         args.embedding_dim = 250
     set_seed(args.seed)
@@ -162,8 +162,4 @@ def train():
 if __name__ == '__main__':
     os.environ['NCCL_P2P_DISABLE'] = '1'
     os.environ['NCCL_IB_DISABLE'] = '1'
-    # train()
-    tokenizer = AutoTokenizer.from_pretrained('models--TheBloke--Llama-2-7B-fp16', use_fast=True)
-    print(tokenizer.pad_token)
-    tokenizer.pad_token = tokenizer.eos_token
-    print(tokenizer.pad_token)
+    train()
