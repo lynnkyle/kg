@@ -7,6 +7,7 @@ CUDA_VISIBLE_DEVICES=0 nohup python train_mygo_fgc.py --data DB15K --num_epoch 1
 """
 
 import argparse
+import os.path
 import random
 import json
 import numpy as np
@@ -44,7 +45,7 @@ def valid_eval_metric(valid_or_test):
 
 
 @torch.no_grad()
-def save_numpy(valid_or_test, topK=20):
+def save_numpy(args, valid_or_test, topK=20):
     query_list = []
     rank_list = []
     topk_list = []
@@ -85,14 +86,14 @@ def save_numpy(valid_or_test, topK=20):
     rank_list = np.array(rank_list)
     topk_list = np.array(topk_list)
     topk_score_list = np.array(topk_score_list)
-    with open('query.json', 'w') as f:
+    with open(os.path.join(args.save_dir, 'query.json'), 'w') as f:
         json.dump(query_list, f)
-    np.save('ranks.npy', rank_list)
-    np.save('topks.npy', topk_list)
-    np.save('topk_scores.npy', topk_score_list)
-    torch.save(ent_embs, 'entity_embeddings.pt')
+    np.save(os.path.join(args.save_dir, 'ranks.npy'), rank_list)
+    np.save(os.path.join(args.save_dir, 'topks.npy'), topk_list)
+    np.save(os.path.join(args.save_dir, 'topk_scores.npy'), topk_score_list)
+    torch.save(ent_embs, os.path.join(args.save_dir, 'entity_embeddings.pt'))
     query_embeds = torch.tensor(query_embeds)
-    torch.save(query_embeds, 'query_embeddings.pt')
+    torch.save(query_embeds, os.path.join(args.save_dir, 'query_embeddings.pt'))
     return query_list, rank_list, topk_list, topk_score_list, ent_embs, query_embeds
 
 
@@ -138,6 +139,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_layer_enc_rel', default=1, type=int)
     parser.add_argument('--num_layer_dec', default=1, type=int)
     parser.add_argument('--dropout', default=0, type=float)
+    parser.add_argument('--save_dir', default='../../data/benchmark/DB15K/MyGo', type=str)
     args = parser.parse_args()
 
     """
@@ -174,7 +176,7 @@ if __name__ == '__main__':
 
     model.eval()
     valid_and_test = kg.valid + kg.test
-    query_list, rank_list, topk_list, topk_score_list, ent_embs, query_embs = save_numpy(valid_and_test)
+    query_list, rank_list, topk_list, topk_score_list, ent_embs, query_embs = save_numpy(args, valid_and_test)
     print(len(query_list))
     print(len(rank_list))
     print(len(topk_list))
