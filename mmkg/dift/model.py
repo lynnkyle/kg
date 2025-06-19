@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import torch
 from torch import nn
 from transformers import LlamaForCausalLM
@@ -19,14 +20,14 @@ class EmbeddingModel(nn.Module):
         :param hidden_act:  adapter激活函数
         """
         super().__init__()
-        ent_emb_path = os.path.join(emb_dir, 'entity_embeddings.pt')
-        query_emb_path = os.path.join(emb_dir, 'query_embeddings.pt')
+        ent_emb_path = os.path.join(emb_dir, 'entity_embeddings.npy')
+        query_emb_path = os.path.join(emb_dir, 'query_embeddings.npy')
 
-        ent_emb = torch.load(ent_emb_path)
+        ent_emb = torch.from_numpy(np.load(ent_emb_path))
         ent_emb.requires_grad = False
         self.ent_emb = nn.Embedding.from_pretrained(ent_emb)
 
-        query_emb = torch.load(query_emb_path)
+        query_emb = torch.from_numpy(np.load(query_emb_path))
         query_emb.requires_grad = False
         self.query_emb = nn.Embedding.from_pretrained(query_emb)
 
@@ -89,13 +90,15 @@ class KGELlama(nn.Module):
 
         input_ids[input_ids == query_holder] = self.tokenizer.pad_token_id  # (batch_size, seq_len)
         input_ids[input_ids == entity_holder] = self.tokenizer.pad_token_id  # (batch_size, seq_len)
-        input_emb = self.llama_model.model.embed_tokens(input_ids).clone()  # (batch_size, seq_len, embed_dim)
-        input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds  # (batch_size, seq_len, embed_dim)
-        input_emb[entity_position[:, 0], entity_position[:, 1]] = entity_embeds  # (batch_size, seq_len, embed_dim)
+        input_emb = self.llama_model.model.model.embed_tokens(input_ids).clone()  # (batch_size, seq_len, embed_dim)
+        input_emb[query_position[:, 0], query_position[:, 1]] = query_embeds.to(
+            dtype=input_emb.dtype)  # (batch_size, seq_len, embed_dim)
+        input_emb[entity_position[:, 0], entity_position[:, 1]] = entity_embeds.to(
+            dtype=input_emb.dtype)  # (batch_size, seq_len, embed_dim)
 
         # 训练/计算损失/微调 把输入送入模型并返回loss和logits
         return self.llama_model(
-            input_embeds=input_emb,
+            inputs_embeds=input_emb,
             attention_mask=attention_mask,
             labels=labels
         )

@@ -36,7 +36,8 @@ def get_accelerate_model(args, config, pretrained_model_class):
     # 模型量化
     if args.use_quant:
         compute_dtype = (torch.float16 if args.fp16 else (torch.bfloat16 if args.bf16 else torch.float32))
-        model = pretrained_model_class.from_pretrained(args.model_name_or_path, config=config, device_map='auto',
+        model = pretrained_model_class.from_pretrained(args.model_name_or_path, config=config,
+                                                       device_map='auto',
                                                        quantization_config=BitsAndBytesConfig(
                                                            load_in_4bit=args.bits == 4,
                                                            load_in_8bit=args.bits == 8,
@@ -73,6 +74,7 @@ def get_accelerate_model(args, config, pretrained_model_class):
                 module = module.to(torch.bfloat16)
         if 'norm' in name:
             module = module.to(torch.float32)
+
         if 'lm_head' in name or 'embed_tokens' in name:
             if hasattr(module, 'weight'):
                 if args.bf16 and module.weight.dtype == torch.float32:

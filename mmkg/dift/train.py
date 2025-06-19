@@ -3,6 +3,8 @@ import argparse
 from typing import Optional
 from dataclasses import dataclass, field
 
+import torch.cuda
+
 from data import make_data_module
 from model import EmbeddingModel, KGELlama
 from utils import get_logger, get_accelerate_model, SavePeftModelCallback
@@ -138,7 +140,7 @@ def train():
         kge_embedding_dir = os.path.join(args.dataset, args.kge_model)
         embed_model = EmbeddingModel(kge_embedding_dir, args.embedding_dim, 1024, llm_config.hidden_size,
                                      llm_config.hidden_act)
-        model = KGELlama(args, model, embed_model)
+        model = KGELlama(tokenizer, model, embed_model)
 
     data_module = make_data_module(args, tokenizer, logger)
 
@@ -160,6 +162,8 @@ def train():
 
 
 if __name__ == '__main__':
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     os.environ['NCCL_P2P_DISABLE'] = '1'
     os.environ['NCCL_IB_DISABLE'] = '1'
+    torch.cuda.set_device(0)
     train()

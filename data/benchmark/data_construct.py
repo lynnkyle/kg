@@ -256,7 +256,7 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
         tail_entity_ids = [graph.ent2id[ent] for ent in tail_topk]
 
         head_prediction = {
-            'id': 2 * idx,
+            'query_id': 2 * idx,
             'query': head_query,
             'triple': (id2ent[h_idx], id2rel[r_idx], id2ent[t_idx]),
             'triple2id': (h_idx, r_idx, t_idx),
@@ -269,7 +269,7 @@ def MyGo_preprocess(args, graph: KnowledgeGraph):
         data.append(head_prediction)
 
         tail_prediction = {
-            'id': 2 * idx + 1,
+            'query_id': 2 * idx + 1,
             'query': tail_query,
             'triple': (id2ent[h_idx], id2rel[r_idx], id2ent[t_idx]),
             'triple2id': (h_idx, r_idx, t_idx),
@@ -327,7 +327,7 @@ def make_prompt(input_dict, graph: KnowledgeGraph):
     """
     args = graph.args
 
-    idx = input_dict['id']
+    idx = input_dict['query_id']
 
     h, r, t = input_dict['triple']
     ent2name, ent2desc, rel2name, = graph.ent2name, graph.ent2desc, graph.rel2name

@@ -11,8 +11,7 @@ def make_data_module(args, tokenizer, logger=None):
     data_collator = KGDataCollator(args, tokenizer)
     return {
         'train_dataset': data_module.train_dataset,
-        'valid_dataset': data_module.valid_dataset,
-        'test_dataset': data_module.test_dataset,
+        'eval_dataset': data_module.eval_dataset,
         'data_collator': data_collator
     }
 
@@ -23,11 +22,11 @@ class KGDataModule(object):
         self.tokenizer = tokenizer
 
         train_example = json.load(open(args.train_path, 'r', encoding='utf-8'))
-        valid_example = json.load(open(args.eval_path, 'r', encoding='utf-8'))
+        eval_example = json.load(open(args.eval_path, 'r', encoding='utf-8'))
         test_example = json.load(open(args.test_path, 'r', encoding='utf-8'))
 
         self.train_dataset = KGDataset(train_example)
-        self.valid_dataset = KGDataset(valid_example)
+        self.eval_dataset = KGDataset(eval_example)
         self.test_dataset = KGDataset(test_example)
 
 
@@ -38,17 +37,17 @@ class KGDataCollator(object):
     def __init__(self, args, tokenizer):
         self.args = args
         self.tokenizer = tokenizer
-        self.source_max_length = args.source_max_length
-        self.target_max_length = args.target_max_length
+        self.source_max_len = args.source_max_len
+        self.target_max_len = args.target_max_len
 
     def __call__(self, instances):
         sources = [f"{self.tokenizer.bos_token} {example['input']}" for example in instances]
         targets = [f"{example['output']} {self.tokenizer.eos_token}" for example in instances]
 
         # Tokenize(source：输入,含提示词, target:标签)
-        tokenized_sources = self.tokenizer(sources, max_length=self.source_max_length,
+        tokenized_sources = self.tokenizer(sources, max_length=self.source_max_len,
                                            truncation=True, add_special_tokens=False)
-        tokenized_targets = self.tokenizer(targets, max_length=self.target_max_length, truncation=True,
+        tokenized_targets = self.tokenizer(targets, max_length=self.target_max_len, truncation=True,
                                            add_special_tokens=False)
         source_input_ids = tokenized_sources["input_ids"]
         target_input_ids = tokenized_targets["input_ids"]
@@ -73,7 +72,7 @@ class KGDataCollator(object):
                 example['query_id'] for example in instances
             ])
             data_dict['entity_ids'] = torch.LongTensor([
-                example['entity_id'] for example in instances
+                example['entity_ids'] for example in instances
             ])
         else:
             raise NotImplementedError

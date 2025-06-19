@@ -91,9 +91,9 @@ def save_numpy(args, valid_or_test, topK=20):
     np.save(os.path.join(args.save_dir, 'ranks.npy'), rank_list)
     np.save(os.path.join(args.save_dir, 'topks.npy'), topk_list)
     np.save(os.path.join(args.save_dir, 'topk_scores.npy'), topk_score_list)
-    torch.save(ent_embs, os.path.join(args.save_dir, 'entity_embeddings.pt'))
+    np.save(os.path.join(args.save_dir, 'entity_embeddings.npy'), ent_embs.cpu().numpy())
     query_embeds = torch.tensor(query_embeds)
-    torch.save(query_embeds, os.path.join(args.save_dir, 'query_embeddings.pt'))
+    np.save(os.path.join(args.save_dir, 'query_embeddings.npy'), query_embeds.cpu().numpy())
     return query_list, rank_list, topk_list, topk_score_list, ent_embs, query_embeds
 
 
@@ -181,5 +181,6 @@ if __name__ == '__main__':
     print(len(rank_list))
     print(len(topk_list))
     print(len(topk_score_list))
-    print(ent_embs.shape)
-    print(query_embs.shape)
+    print(len(ent_embs))
+    print(len(query_embs))
+    print("Done!!!")
