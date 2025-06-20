@@ -71,14 +71,14 @@ def get_accelerate_model(args, config, pretrained_model_class):
     for name, module in model.named_modules():
         if isinstance(module, LoraLayer):
             if args.bf16:
-                module = module.to(torch.bfloat16)
+                module.to(torch.bfloat16)
         if 'norm' in name:
-            module = module.to(torch.float32)
+            module.to(torch.float32)
 
         if 'lm_head' in name or 'embed_tokens' in name:
             if hasattr(module, 'weight'):
                 if args.bf16 and module.weight.dtype == torch.float32:
-                    module = module.to(torch.bfloat16)
+                    module.to(torch.bfloat16)
 
     return model
 

@@ -61,6 +61,10 @@ class TrainingArguments(Seq2SeqTrainingArguments):
     per_device_train_batch_size: int = field(default=1, metadata={'help': 'Per Device Training Batch Size'})
     gradient_accumulation_steps: int = field(default=16, metadata={'help': 'Gradient Accumulation Steps'})
 
+    eval_strategy: str = field(default="steps", metadata={"help": "Evaluation strategy: no, steps, epoch"})
+    eval_steps: int = field(default=2, metadata={"help": "Run evaluation every n steps"})
+    per_device_eval_batch_size: int = field(default=1, metadata={'help': 'Per Device Eval Batch Size'})
+
     optim: str = field(default='paged_adamw_32bit', metadata={'help': 'Optimization Method'})
     learning_rate: float = field(default=2e-4, metadata={'help': 'Learning Rate'})
     lr_scheduler_type: str = field(default='constant',
@@ -111,6 +115,12 @@ class GenerationArguments:
         'help': 'Return Dict(Sequences、 Scores、 Beam_Indices、 Sequence_Scores) In Generate Or Not'})
 
 
+def compute_metrics(eval_pred):
+    # logits, labels = eval_pred
+    # print(eval_pred)
+    return {"dummy_metric": 0.0}
+
+
 def train():
     hf_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, GenerationArguments))
     model_args, data_args, training_args, generation_args, _ = hf_parser.parse_args_into_dataclasses(
@@ -146,11 +156,11 @@ def train():
 
     trainer = Seq2SeqTrainer(
         model=model,
-        tokenizer=tokenizer,
+        # tokenizer=tokenizer,
         args=training_args,
+        compute_metrics=compute_metrics,
         **data_module
     )
-
     if not args.full_finetune:
         trainer.add_callback(SavePeftModelCallback)  # 训练完成后，只保存PEFT adapter权重，而不是整个模型
 
