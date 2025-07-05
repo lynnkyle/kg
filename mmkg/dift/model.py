@@ -126,7 +126,7 @@ class KGELlama(nn.Module):
 
         # 生成文本 基于输入生成下一个token序列
         return self.llama_model.generate(
-            input_embeds=input_emb,
+            inputs_embeds=input_emb,
             generation_config=generation_config
         )
 

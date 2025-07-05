@@ -43,7 +43,7 @@ class Evaluator(object):
                     output = self.model.generate(
                         input_ids=input_ids,
                         query_ids=torch.LongTensor([ex['query_id']]).to(input_ids.device),
-                        entity_ids=torch.LongTensor([ex['entity_id']]).to(input_ids.device),
+                        entity_ids=torch.LongTensor([ex['entity_ids']]).to(input_ids.device),
                         generation_config=self.generation_config
                     )
                     generated.append(output.sequences[0].cpu().numpy().tolist())
@@ -105,6 +105,10 @@ def print_parameter_datatypes(model, logger=None):
 
 
 if __name__ == '__main__':
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['NCCL_P2P_DISABLE'] = '1'
+    os.environ['NCCL_IB_DISABLE'] = '1'
+    torch.cuda.set_device(0)
     hfparser = HfArgumentParser((ModelArguments, DataArguments, EvaluationArguments, GenerationArguments))
     model_args, data_args, eval_args, generation_args, _ = hfparser.parse_args_into_dataclasses(
         return_remaining_strings=True)
@@ -116,24 +120,23 @@ if __name__ == '__main__':
 
     logger = get_logger(os.path.dirname(args.checkpoint_dir))
     logger.info('args==>')
-    logger.info(json.dump(vars(args)), ensure_ascii=False, indent=4)
+    logger.info(json.dumps(vars(args), ensure_ascii=False, indent=4))
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_class_or_path, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False)
     tokenizer.pad_token = tokenizer.eos_token
 
     if args.model_class == 'KGELlama':
         tokenizer.add_tokens(['[QUERY]', '[ENTITY]'])
-        model = LlamaForCausalLM.from_pretrained(args.model_class_or_path, low_cpu_mem_usage=True, device_map='auto')
-        model = PeftModel.from_pretrained(model, args.checkpoint_dir)
+        model = LlamaForCausalLM.from_pretrained(args.model_name_or_path, low_cpu_mem_usage=True, device_map='auto')
+        model = PeftModel.from_pretrained(model, os.path.join(args.checkpoint_dir, "adapter_model"))
         llm_config = model.config
         kge_embedding_dir = os.path.join(args.dataset, args.kge_model)
         embed_model = EmbeddingModel(kge_embedding_dir, args.embedding_dim, 1024, llm_config.hidden_size,
                                      llm_config.hidden_act)
-        embed_model.load_state_dict(torch.load(os.path.join(os.path.dirname(args.checkpoint_dir), 'kge_model.pth')),
-                                    map_location='cpu')
+        embed_model.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, 'kge_model.pth'), map_location='cpu'))
+        embed_model.cuda()
         model = KGELlama(tokenizer, model, embed_model)
 
-    model.cuda()
     model.eval()
     print_parameter_datatypes(model, logger)
     data_module = KGDataModule(args, tokenizer)
