@@ -25,9 +25,9 @@ class KGDataModule(object):
         eval_example = json.load(open(args.eval_path, 'r', encoding='utf-8'))
         test_example = json.load(open(args.test_path, 'r', encoding='utf-8'))
 
-        self.train_dataset = KGDataset(train_example)
-        self.eval_dataset = KGDataset(eval_example)
-        self.test_dataset = KGDataset(test_example)
+        self.train_dataset = KGDataset(train_example)[:100]
+        self.eval_dataset = KGDataset(eval_example)[:20]
+        self.test_dataset = KGDataset(test_example)[:100]
 
 
 IGNORE_INDEX = -100

@@ -1,8 +1,17 @@
+import argparse
+import json
+import os.path
+
 import numpy as np
 import torch
+from peft import PeftModel
 
-from mmkg.dift.data import KGDataset
+from mmkg.dift.data import KGDataset, KGDataModule
 from tqdm import tqdm
+from transformers import HfArgumentParser, GenerationConfig, AutoTokenizer, LlamaForCausalLM
+
+from mmkg.dift.model import EmbeddingModel, KGELlama
+from utils import ModelArguments, DataArguments, EvaluationArguments, GenerationArguments, get_logger
 
 
 class Evaluator(object):
@@ -75,3 +84,65 @@ class Evaluator(object):
             compute_metrics(ranks)
 
         return preds
+
+
+def print_parameter_datatypes(model, logger=None):
+    dtypes = dict()
+    for _, p in model.named_parameters():
+        dtype = p.dtype
+        if dtype not in dtypes: dtypes[dtype] = 0
+        dtypes[dtype] += p.numel()
+
+    total = 0
+    for k, v in dtypes.items(): total += v
+
+    for k, v in dtypes.items():
+
+        if logger is None:
+            print(f'type: {k} || num: {v} || {round(v / total, 3)}')
+        else:
+            logger.info(f'type: {k} || num: {v} || {round(v / total, 3)}')
+
+
+if __name__ == '__main__':
+    hfparser = HfArgumentParser((ModelArguments, DataArguments, EvaluationArguments, GenerationArguments))
+    model_args, data_args, eval_args, generation_args, _ = hfparser.parse_args_into_dataclasses(
+        return_remaining_strings=True)
+    generation_config = GenerationConfig(**vars(generation_args))
+    args = argparse.Namespace(**vars(model_args), **vars(data_args), **vars(eval_args))
+    assert args.model_class in ['KGELlama']
+    if args.kge_model == 'TransE':
+        args.embedding_dim = 250
+
+    logger = get_logger(os.path.dirname(args.checkpoint_dir))
+    logger.info('args==>')
+    logger.info(json.dump(vars(args)), ensure_ascii=False, indent=4)
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model_class_or_path, use_fast=False)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    if args.model_class == 'KGELlama':
+        tokenizer.add_tokens(['[QUERY]', '[ENTITY]'])
+        model = LlamaForCausalLM.from_pretrained(args.model_class_or_path, low_cpu_mem_usage=True, device_map='auto')
+        model = PeftModel.from_pretrained(model, args.checkpoint_dir)
+        llm_config = model.config
+        kge_embedding_dir = os.path.join(args.dataset, args.kge_model)
+        embed_model = EmbeddingModel(kge_embedding_dir, args.embedding_dim, 1024, llm_config.hidden_size,
+                                     llm_config.hidden_act)
+        embed_model.load_state_dict(torch.load(os.path.join(os.path.dirname(args.checkpoint_dir), 'kge_model.pth')),
+                                    map_location='cpu')
+        model = KGELlama(tokenizer, model, embed_model)
+
+    model.cuda()
+    model.eval()
+    print_parameter_datatypes(model, logger)
+    data_module = KGDataModule(args, tokenizer)
+    evaluator = Evaluator(args, tokenizer, model, data_module, generation_config)
+    preds = evaluator.eval_metric(data_module.test_dataset)
+    output = {
+        'args': vars(args),
+        'generation_config': vars(generation_config),
+        'predication': preds,
+    }
+    output_path = os.path.join(os.path.dirname(args.checkpoint_dir), 'prediction.json')
+    json.dump(output, open(output_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=4)
