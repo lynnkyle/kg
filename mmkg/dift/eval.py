@@ -78,12 +78,16 @@ class Evaluator(object):
                     'mrr': np.mean(1. / rank)
                 }
                 metrics = {k: round(v, 3) for k, v in metrics.items()}
+                return metrics
 
             logger.info('=' * 80)
-            compute_metrics(raw_ranks)
-            compute_metrics(ranks)
+            raw_metrics = compute_metrics(raw_ranks)
+            logger.info('raw_metrics: {}'.format(raw_metrics))
+            metrics = compute_metrics(ranks)
+            logger.info('metrics: {}'.format(metrics))
+            logger.info('=' * 80)
 
-        return preds
+        return preds, raw_metrics, metrics
 
 
 def print_parameter_datatypes(model, logger=None):
@@ -141,11 +145,13 @@ if __name__ == '__main__':
     print_parameter_datatypes(model, logger)
     data_module = KGDataModule(args, tokenizer)
     evaluator = Evaluator(args, tokenizer, model, data_module, generation_config)
-    preds = evaluator.eval_metric(data_module.test_dataset)
+    preds, raw_metrics, metrics = evaluator.eval_metric(data_module.test_dataset)
     output = {
         'args': vars(args),
-        'generation_config': vars(generation_config),
+        'generation_config': generation_config.to_dict(),
         'predication': preds,
+        'raw_metrics': raw_metrics,
+        'metrics': metrics
     }
     output_path = os.path.join(os.path.dirname(args.checkpoint_dir), 'prediction.json')
     json.dump(output, open(output_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=4)
