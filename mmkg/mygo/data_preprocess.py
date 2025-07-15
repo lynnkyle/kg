@@ -17,7 +17,7 @@ from torch import nn
 import logging
 
 from dataset import VTKG
-from model_mygo import MyGo
+from model import MyGo
 from merge_tokens import get_entity_visual_tokens, get_entity_textual_tokens
 from utils import calculate_rank, metrics, get_rank, get_topK
 

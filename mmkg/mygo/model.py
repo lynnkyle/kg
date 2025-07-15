@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from model_new import Tucker, ContrastiveLoss
+from model_new import Tucker, ICLLoss
 import numpy as np
 
 
@@ -88,7 +88,7 @@ class MyGo(nn.Module):
                                                    dropout=dropout, batch_first=True)
         self.decoder = nn.TransformerEncoder(decoder_layer, num_layers=num_layer_dec)
 
-        self.contrastive = ContrastiveLoss()
+        self.contrastive = ICLLoss
         self.num_visual_token = visual_ent_mask.shape[1]
         if self.score_function == 'tucker':
             self.tucker_decoder = Tucker(str_dim, str_dim)
@@ -171,27 +171,28 @@ class MyGo(nn.Module):
         然后，它在批量（batch）中使用对比学习，让模型学会关注真正重要的信息，提高实体表示的区分性和鲁棒性。
     """
 
-    def contrastive_loss_finegrained(self, emb_ent1):
+    def align_loss(self, emb_ent1):
         """
         :param emb_ent: [num_ent, str_dim]
         :return:
         """
-        ent_token = self.ent_token.tile(self.num_ent, 1, 1)
-        rep_ent_str = self.str_drop(self.str_ln(self.ent_emb)) + self.pos_str_ent
-        ent_visual_token = self.visual_token_embed(self.visual_token_index)
+        ent_token = self.ent_token.tile(self.num_ent, 1, 1)  # [12842, 1, 256]
+        rep_ent_str = self.str_drop(self.str_ln(self.ent_emb)) + self.pos_str_ent  # [12842, 1, 256]
+        ent_visual_token = self.visual_token_embed(self.visual_token_index)  # [12842, 8, 32]
         rep_ent_visual_token = self.visual_drop(
-            self.visual_ln(self.proj_ent_visual(ent_visual_token))) + self.pos_visual_ent
-        ent_textual_token = self.textual_token_embed(self.textual_token_index)
+            self.visual_ln(self.proj_ent_visual(ent_visual_token))) + self.pos_visual_ent  # [12842, 8, 256]
+        ent_textual_token = self.textual_token_embed(self.textual_token_index)  # [12842, 4, 768]
         rep_ent_textual_token = self.textual_drop(
-            self.textual_ln(self.proj_ent_textual(ent_textual_token))) + self.pos_textual_ent
-        ent_seq = torch.cat([ent_token, rep_ent_str, rep_ent_visual_token, rep_ent_textual_token], dim=1)
-        ent_embs = self.ent_encoder(ent_seq, src_key_padding_mask=self.ent_mask)  # [batch_size, 4, str_dim]
-        emb_ent2 = torch.cat([ent_embs[:, 0], self.lp_token], dim=0)
-        emb_ent3 = torch.cat([torch.mean(ent_embs, dim=1), self.lp_token], dim=0)
+            self.textual_ln(self.proj_ent_textual(ent_textual_token))) + self.pos_textual_ent  # [12842, 4, 256]
+        ent_seq = torch.cat([ent_token, rep_ent_str, rep_ent_visual_token, rep_ent_textual_token],
+                            dim=1)  # [12842, 14, 256]
+        ent_embs = self.ent_encoder(ent_seq, src_key_padding_mask=self.ent_mask)  # [12842, 14, 256]
+        emb_ent2 = torch.cat([ent_embs[:, 0], self.lp_token], dim=0)  # [12843, 256]
+        emb_ent3 = torch.cat([torch.mean(ent_embs, dim=1), self.lp_token], dim=0)  # [12843, 256]
         emb_ent4 = torch.cat([torch.mean(ent_embs[:, 2:2 + self.num_visual_token], dim=1), self.lp_token],
-                             dim=0)  # [batch_size, str_dim]
+                             dim=0)  # [12843, 256]
         emb_ent5 = torch.cat([torch.mean(ent_embs[:, 2 + self.num_visual_token:], dim=1), self.lp_token],
-                             dim=0)  # [batch_size, str_dim]
+                             dim=0)  # [12843, 256]
         select_ent = torch.randperm(ent_embs.shape[0])[:2 * self.str_dim]
         contrastive_loss = 0
         for emb in [emb_ent2, emb_ent3, emb_ent4, emb_ent5]:

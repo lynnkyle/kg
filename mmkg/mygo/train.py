@@ -17,14 +17,14 @@ from torch import nn
 import logging
 
 from dataset import VTKG
-from model_mygo import MyGo
+from model import MyGo
 from merge_tokens import get_entity_visual_tokens, get_entity_textual_tokens
 from utils import calculate_rank, metrics
 
 """
     代码可复现
 """
-torch.cuda.set_device(1)
+torch.cuda.set_device(0)
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
@@ -128,7 +128,7 @@ def train_one_epoch(model, optimizer):
         score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
         if args.mu != 0:
-            loss += args.mu * model.contrastive_loss_finegrained(ent_embs)
+            loss += args.mu * model.align_loss(ent_embs)
         total_loss += loss.item()
         optimizer.zero_grad()
         loss.backward()

@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -45,33 +46,50 @@ class Tucker(nn.Module):
 """
 
 
-class Similarity(nn.Module):
-    def __init__(self, temp):
-        super(Similarity, self).__init__()
-        self.temp = temp  # 温度参数
-        self.cos = nn.CosineSimilarity(dim=-1)
+class BrayCurtisAlign(nn.Module):
+    def __init__(self):
+        super(BrayCurtisAlign, self).__init__()
 
-    def forward(self, x, y):
-        return self.cos(x, y) / self.temp
+    def forward(self, emb_1, emb_2):
+        emb_u = emb_1.unsqueeze(1)
+        emb_v = emb_2.unsqueeze(0)
+        numerator = torch.abs(emb_u - emb_v).sum(dim=2)
+        denominator = torch.abs(emb_u + emb_v).sum(dim=2) + 1e-8
+        d_bray = numerator / denominator
+        return 1.0 - d_bray
 
 
-class ContrastiveLoss(nn.Module):
-    def __init__(self, temp=0.5):
-        super(ContrastiveLoss, self).__init__()
+class CosineAlign(nn.Module):
+    def __init__(self):
+        super(CosineAlign, self).__init__()
+
+    def forward(self, emb1, emb2):
+        u = F.normalize(emb1, p=2, dim=1)  # [n, d]
+        v = F.normalize(emb2, p=2, dim=1)  # [m, d]
+        # 执行矩阵乘法，相当于逐对做 dot product
+        sim_matrix = torch.matmul(u, v.T)  # [n, m]
+        return sim_matrix
+
+
+class ICLLoss(nn.Module):
+    def __init__(self):
+        super(ICLLoss, self).__init__()
         self.loss = nn.CrossEntropyLoss()
-        self.similarity_fn = Similarity(temp=temp)
+        self.align_fn_1 = BrayCurtisAlign()
+        self.align_fn_2 = CosineAlign()
 
     def forward(self, emb1, emb2):
         """:
         :param emb1: [batch_size, dim]->[batch_size, 1, dim]
         :param emb2: [batch_size, dim]->[1, batch_size, dim]
         """
-        batch_sim = self.similarity_fn(emb1.unsqueeze(1), emb2.unsqueeze(0))  # [batch_size, batch_size]
+        batch_sim_1 = self.align_fn_1(emb1, emb2)
+        batch_sim_2 = self.align_fn_2(emb1, emb2)  # [batch_size, batch_size]
         """
             计算第一次、第二次过实体编码器Transformer得到的嵌入的损失
         """
-        labels = torch.arange(batch_sim.size(0)).long().to('cuda')
-        return self.loss(batch_sim, labels.cuda())
+        labels = torch.arange(batch_sim_2.size(0)).long().to('cuda')
+        return self.loss(batch_sim_2, labels.cuda())
 
 
 if __name__ == '__main__':
