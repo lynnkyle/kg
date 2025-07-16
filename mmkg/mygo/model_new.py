@@ -46,55 +46,69 @@ class Tucker(nn.Module):
 """
 
 
-class BrayCurtisAlign(nn.Module):
-    def __init__(self):
-        super(BrayCurtisAlign, self).__init__()
-
-    def forward(self, emb_1, emb_2):
-        emb_u = emb_1.unsqueeze(1)
-        emb_v = emb_2.unsqueeze(0)
-        numerator = torch.abs(emb_u - emb_v).sum(dim=2)
-        denominator = torch.abs(emb_u + emb_v).sum(dim=2) + 1e-8
-        d_bray = numerator / denominator
-        return 1.0 - d_bray
-
-
-class CosineAlign(nn.Module):
-    def __init__(self):
-        super(CosineAlign, self).__init__()
-
-    def forward(self, emb1, emb2):
-        u = F.normalize(emb1, p=2, dim=1)  # [n, d]
-        v = F.normalize(emb2, p=2, dim=1)  # [m, d]
-        # 执行矩阵乘法，相当于逐对做 dot product
-        sim_matrix = torch.matmul(u, v.T)  # [n, m]
-        return sim_matrix
-
-
 class ICLLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, temp=0.05):
         super(ICLLoss, self).__init__()
-        self.loss = nn.CrossEntropyLoss()
-        self.align_fn_1 = BrayCurtisAlign()
-        self.align_fn_2 = CosineAlign()
+        self.temp = temp
+        self.LARGE_NUM = 1e9
 
     def forward(self, emb1, emb2):
         """:
         :param emb1: [batch_size, dim]->[batch_size, 1, dim]
         :param emb2: [batch_size, dim]->[1, batch_size, dim]
         """
-        batch_sim_1 = self.align_fn_1(emb1, emb2)
-        batch_sim_2 = self.align_fn_2(emb1, emb2)  # [batch_size, batch_size]
+
         """
             计算第一次、第二次过实体编码器Transformer得到的嵌入的损失
         """
-        labels = torch.arange(batch_sim_2.size(0)).long().to('cuda')
-        return self.loss(batch_sim_2, labels.cuda())
+        assert emb1.size() == emb2.size()
+        emb1 = F.normalize(emb1, p=2, dim=1)
+        emb2 = F.normalize(emb2, p=2, dim=1)
+        ent_num = emb1.shape[0]
+        target = F.one_hot(torch.arange(0, ent_num), num_classes=ent_num * 2)
+        mask = F.one_hot(torch.arange(ent_num), num_classes=ent_num)
+        logits_aa = torch.matmul(emb1, emb1.t()) / self.temp - self.LARGE_NUM * mask
+        logits_ab = torch.matmul(emb1, emb2.t()) / self.temp - self.LARGE_NUM * mask
+        logits_bb = torch.matmul(emb2, emb2.t()) / self.temp - self.LARGE_NUM * mask
+        logits_ba = torch.matmul(emb2, emb1.t()) / self.temp - self.LARGE_NUM * mask
+        logits_a = torch.cat([logits_ab, logits_aa], dim=1)
+        loss = self.softXEnt(target, logits_a)
+        return loss
+
+    def softXEnt(self, target, logits):
+        log_probs = F.log_softmax(logits, dim=1)
+        loss = -(target * log_probs).sum() / logits.shape[0]
+        return loss
+
+
+class Similarity(nn.Module):
+    """
+    Dot product or cosine similarity
+    """
+
+    def __init__(self, temp):
+        super().__init__()
+        self.temp = temp
+        self.cos = nn.CosineSimilarity(dim=-1)
+
+    def forward(self, x, y):
+        return self.cos(x, y) / self.temp
+
+
+class ContrastiveLoss(nn.Module):
+    def __init__(self, temp=0.5):
+        super().__init__()
+        self.loss = nn.CrossEntropyLoss()
+        self.sim_func = Similarity(temp=temp)
+
+    def forward(self, emb1, emb2):
+        batch_sim = self.sim_func(emb1.unsqueeze(1), emb2.unsqueeze(0))
+        labels = torch.arange(batch_sim.size(0)).long().to('cuda')
+        return self.loss(batch_sim, labels)
 
 
 if __name__ == '__main__':
-    x = torch.randn((3, 6, 5))
-    print(x.size())
-    print(x.size(0))
-    print(x.size(1))
-    print(x.size(2))
+    x = torch.randn((5, 256))
+    y = torch.randn((5, 256))
+    loss_func = ICLLoss(temp=0.05)
+    loss = loss_func(x, y)
