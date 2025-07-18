@@ -42,7 +42,7 @@ torch.cuda.set_device(1)
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default='DB15K')
 parser.add_argument('--batch_size', type=int, default=2048)
-parser.add_argument('--model', type=str, default='MyGo')
+parser.add_argument('--model', type=str, default='AFFT')
 parser.add_argument('--device', type=str, default='cuda:1')
 parser.add_argument('--num_epoch', type=int, default=1500)
 parser.add_argument('--valid_epoch', type=int, default=1)
@@ -54,7 +54,10 @@ parser.add_argument('--str_dropout', default=0, type=float)
 parser.add_argument('--visual_dropout', default=0, type=float)
 parser.add_argument('--textual_dropout', default=0, type=float)
 parser.add_argument('--lr', default=1e-3, type=float)
-parser.add_argument('--mu', default=0.01, type=float)
+# Loss的超参数
+parser.add_argument('--contrastive', default=0.01, type=float)
+parser.add_argument('--before_align', default=0.05, type=float)
+parser.add_argument('--after_align', default=0.05, type=float)
 # Transformer的配置
 parser.add_argument('--num_head', default=2, type=int)
 parser.add_argument('--dim_hid', default=1024, type=int)
@@ -104,15 +107,15 @@ model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visua
              visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout, score_function='tucker').cuda()
 # 模型加载
 # param1 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['state_dict']
-model.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['state_dict'])
+# model.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['state_dict'])
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 # 优化器加载
 # param2 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['optimizer']
-optimizer.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['optimizer'])
+# optimizer.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['optimizer'])
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
 # 学习率裁剪器加载
 # param3 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler']
-lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler'])
+# lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler'])
 """
     模型训练
 """
@@ -124,11 +127,15 @@ def train_one_epoch(model, optimizer):
     loss_fn = torch.nn.CrossEntropyLoss()
     for batch, label in kg_loader:
         # for batch, label in tqdm(kg_loader):
-        ent_embs, rel_embs = model()
+        ent_embs, rel_embs, align_before_loss, align_after_loss = model()
         score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
-        if args.mu != 0:
-            loss += args.mu * model.contrastive_loss(ent_embs)
+        if args.before_align != 0:
+            loss += args.before_align * align_before_loss
+        if args.after_align != 0:
+            loss += args.after_align * align_after_loss
+        if args.contrastive != 0:
+            loss += args.contrastive * model.contrastive_loss(ent_embs)
         total_loss += loss.item()
         optimizer.zero_grad()
         loss.backward()
@@ -140,7 +147,7 @@ def train_one_epoch(model, optimizer):
 @torch.no_grad()
 def valid_eval_metric(valid_or_test):
     rank_list = []
-    ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
+    ent_embs, rel_embs, _, _ = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
     for triple in valid_or_test:
         # for triple in tqdm(valid_or_test):
         h, r, t = triple
@@ -159,13 +166,14 @@ def valid_eval_metric(valid_or_test):
     return mr, mrr, hit10, hit3, hit1
 
 
-model.eval()
-res1 = valid_eval_metric(valid_or_test=kg.valid)
-print(res1)
-res2 = valid_eval_metric(valid_or_test=kg.test)
-print(res2)
+# model.eval()
+# res1 = valid_eval_metric(valid_or_test=kg.valid)
+# print(res1)
+# res2 = valid_eval_metric(valid_or_test=kg.test)
+# print(res2)
+# best_mrr = res2[1] or 0
+best_mrr = 0
 
-best_mrr = res2[1] or 0
 best_result = None
 for epoch in range(args.num_epoch):
     loss = train_one_epoch(model, optimizer)
@@ -192,7 +200,8 @@ for epoch in range(args.num_epoch):
             best_mrr = mrr
             best_result = (mr, mrr, hit10, hit3, hit1)
             torch.save({'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
-                        'scheduler': lr_scheduler.state_dict()}, f'ckpt/{args.model}/{args.data}/{epoch + 1}.ckpt')
+                        'scheduler': lr_scheduler.state_dict()},
+                       f'ckpt/{args.model}/{args.data}/{epoch + 1}.ckpt')
 
 logger.info(f'Best MRR: {best_mrr}, Best Result: {best_result}')
 logger.info("Done")

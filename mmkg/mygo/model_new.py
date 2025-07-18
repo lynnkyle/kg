@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch import nn
+from torch import nn, optim
 
 
 class Tucker(nn.Module):
@@ -46,10 +46,11 @@ class Tucker(nn.Module):
 """
 
 
-class ICLLoss(nn.Module):
-    def __init__(self, temp=0.05):
-        super(ICLLoss, self).__init__()
+class AlignLoss(nn.Module):
+    def __init__(self, temp=0.5, alpha=0.5):
+        super(AlignLoss, self).__init__()
         self.temp = temp
+        self.alpha = alpha
         self.LARGE_NUM = 1e9
 
     def forward(self, emb1, emb2):
@@ -65,15 +66,17 @@ class ICLLoss(nn.Module):
         emb1 = F.normalize(emb1, p=2, dim=1)
         emb2 = F.normalize(emb2, p=2, dim=1)
         ent_num = emb1.shape[0]
-        target = F.one_hot(torch.arange(0, ent_num), num_classes=ent_num * 2)
-        mask = F.one_hot(torch.arange(ent_num), num_classes=ent_num)
+        target = F.one_hot(torch.arange(0, ent_num), num_classes=ent_num * 2).to(emb1.device)
+        mask = F.one_hot(torch.arange(ent_num), num_classes=ent_num).to(emb1.device)
         logits_aa = torch.matmul(emb1, emb1.t()) / self.temp - self.LARGE_NUM * mask
-        logits_ab = torch.matmul(emb1, emb2.t()) / self.temp - self.LARGE_NUM * mask
+        logits_ab = torch.matmul(emb1, emb2.t()) / self.temp
         logits_bb = torch.matmul(emb2, emb2.t()) / self.temp - self.LARGE_NUM * mask
-        logits_ba = torch.matmul(emb2, emb1.t()) / self.temp - self.LARGE_NUM * mask
+        logits_ba = torch.matmul(emb2, emb1.t()) / self.temp
         logits_a = torch.cat([logits_ab, logits_aa], dim=1)
-        loss = self.softXEnt(target, logits_a)
-        return loss
+        logits_b = torch.cat([logits_ba, logits_bb], dim=1)
+        loss_a = self.softXEnt(target, logits_a)
+        loss_b = self.softXEnt(target, logits_b)
+        return self.alpha * loss_a + (1 - self.alpha) * loss_b
 
     def softXEnt(self, target, logits):
         log_probs = F.log_softmax(logits, dim=1)
@@ -105,10 +108,3 @@ class ContrastiveLoss(nn.Module):
         batch_sim = self.sim_func(emb1.unsqueeze(1), emb2.unsqueeze(0))
         labels = torch.arange(batch_sim.size(0)).long().to('cuda')
         return self.loss(batch_sim, labels)
-
-
-if __name__ == '__main__':
-    x = torch.randn((5, 256))
-    y = torch.randn((5, 256))
-    loss_func = ICLLoss(temp=0.05)
-    loss = loss_func(x, y)

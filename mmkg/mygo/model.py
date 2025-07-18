@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from model_new import Tucker, ICLLoss, ContrastiveLoss
+from model_new import Tucker, ContrastiveLoss, AlignLoss
 import numpy as np
 
 
@@ -18,7 +18,8 @@ class MyGo(nn.Module):
         self.num_ent = num_ent
         self.num_rel = num_rel
         self.str_dim = str_dim
-        self.num_sampling = 512
+        self.num_align_sampling = 8
+        self.num_contrastive_sampling = 512
         if visual_tokenizer == 'beit':
             visual_tokens = torch.load("tokens/visual.pth")
         elif visual_tokenizer == 'vggan':
@@ -89,7 +90,9 @@ class MyGo(nn.Module):
                                                    dropout=dropout, batch_first=True)
         self.decoder = nn.TransformerEncoder(decoder_layer, num_layers=num_layer_dec)
 
+        self.align = AlignLoss(temp=0.5, alpha=0.5)
         self.contrastive = ContrastiveLoss(temp=0.5)
+
         self.num_visual_token = visual_ent_mask.shape[1]
         if self.score_function == 'tucker':
             self.tucker_decoder = Tucker(str_dim, str_dim)
@@ -125,12 +128,13 @@ class MyGo(nn.Module):
         ent_textual_token = self.textual_token_embed(self.textual_token_index)
         rep_ent_textual = self.textual_drop(
             self.textual_ln(self.proj_ent_textual(ent_textual_token))) + self.pos_textual_ent
-        ent_seq = torch.cat([ent_token, rep_ent_str, rep_ent_visual, rep_ent_textual], dim=1)
-        # self.align_loss_after_fusion()
-        ent_embs = self.ent_encoder(ent_seq, src_key_padding_mask=self.ent_mask)[:, 0]
-        # self.align_loss_after_fusion()
+        ent_seq_before = torch.cat([ent_token, rep_ent_str, rep_ent_visual, rep_ent_textual], dim=1)
+        align_before_loss = self.align_loss_before_fusion(ent_seq_before)
+        ent_seq_after = self.ent_encoder(ent_seq_before, src_key_padding_mask=self.ent_mask)
+        align_after_loss = self.align_loss_after_fusion(ent_seq_after)
+        ent_embs = ent_seq_after[:, 0]
         rel_embs = self.str_drop(self.str_rel_ln(self.rel_emb)).squeeze(1)
-        return torch.cat([ent_embs, self.lp_token], dim=0), rel_embs
+        return torch.cat([ent_embs, self.lp_token], dim=0), rel_embs, align_before_loss, align_after_loss
 
     def score(self, triples, emb_ent, emb_rel):
         """
@@ -174,20 +178,33 @@ class MyGo(nn.Module):
         然后，它在批量（batch）中使用对比学习，让模型学会关注真正重要的信息，提高实体表示的区分性和鲁棒性。
     """
 
-    def align_loss_before_fusion(self, triples, emb_ent, emb_rel):
+    def align_loss_before_fusion(self, ent_seq):
+        """
+        :param emb_ent: [num_ent, seq_len, str_dim] # [12842, 14, 256]
+        :return:
+        """
+        select_ents = torch.randperm(self.num_ent)[:self.num_align_sampling]
+        ent_token = ent_seq[select_ents, 0, :]
+        ent_str_emb = ent_seq[select_ents, 1, :]
+        ent_visual_emb = torch.mean(ent_seq[select_ents, 2:2 + self.num_visual_token, :], dim=1)
+        ent_textual_emb = torch.mean(ent_seq[select_ents, 2 + self.num_visual_token:, :], dim=1)
+        str_visual_loss = self.align(ent_str_emb, ent_visual_emb)
+        str_textual_loss = self.align(ent_str_emb, ent_textual_emb)
+        return str_visual_loss + str_textual_loss  # 32 - 4.7  64 - 5.3
+
+    def align_loss_after_fusion(self, ent_seq):
         """
         :param emb_ent: [num_ent, str_dim]
         :return:
         """
-        return
-
-    def align_loss_after_fusion(self, triples, emb):
-        """
-        :param emb_ent: [num_ent, str_dim]
-        :return:
-        """
-
-        return
+        select_ents = torch.randperm(self.num_ent)[:self.num_align_sampling]
+        ent_token = ent_seq[select_ents, 0, :]
+        ent_str_emb = ent_seq[select_ents, 1, :]
+        ent_visual_emb = torch.mean(ent_seq[select_ents, 2:2 + self.num_visual_token, :], dim=1)
+        ent_textual_emb = torch.mean(ent_seq[select_ents, 2 + self.num_visual_token:, :], dim=1)
+        str_visual_loss = self.align(ent_str_emb, ent_visual_emb)
+        str_textual_loss = self.align(ent_str_emb, ent_textual_emb)
+        return str_visual_loss + str_textual_loss
 
     def contrastive_loss(self, emb_ent):
         ent_token = self.ent_token.tile(self.num_ent, 1, 1)
@@ -201,14 +218,13 @@ class MyGo(nn.Module):
 
         # ent_embs: [ent_num, seq_len, embed_dim]
         ent_embs = self.ent_encoder(ent_seq, src_key_padding_mask=self.ent_mask)
-        print(ent_embs.shape, self.lp_token.shape)
         emb_ent1 = torch.cat([ent_embs[:, 0], self.lp_token], dim=0)
         ent_emb2 = torch.cat([torch.mean(ent_embs, dim=1), self.lp_token], dim=0)
         ent_emb3 = torch.cat([torch.mean(ent_embs[:, 2: 2 + self.num_visual_token, :], dim=1), self.lp_token], dim=0)
-        ent_emb4 = torch.cat([torch.mean(ent_embs[:, 2 + self.num_visual_token: -1, :], dim=1), self.lp_token], dim=0)
-        select_ents = torch.randperm(emb_ent.shape[0])[: self.num_sampling]
+        ent_emb4 = torch.cat([torch.mean(ent_embs[:, 2 + self.num_visual_token:, :], dim=1), self.lp_token], dim=0)
+        select_ents = torch.randperm(emb_ent.shape[0])[: self.num_contrastive_sampling]
         loss = 0
         for emb in [emb_ent1, ent_emb2, ent_emb3, ent_emb4]:
             loss += self.contrastive(emb_ent[select_ents], emb[select_ents])
-        loss /= 4
+        loss /= 4  # loss = 4.7
         return loss
