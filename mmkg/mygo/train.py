@@ -56,8 +56,8 @@ parser.add_argument('--textual_dropout', default=0, type=float)
 parser.add_argument('--lr', default=1e-3, type=float)
 # Loss的超参数
 parser.add_argument('--contrastive', default=0.01, type=float)
-parser.add_argument('--before_align', default=0.05, type=float)
-parser.add_argument('--after_align', default=0.05, type=float)
+parser.add_argument('--before_align', default=0.01, type=float)
+parser.add_argument('--after_align', default=0.01, type=float)
 # Transformer的配置
 parser.add_argument('--num_head', default=2, type=int)
 parser.add_argument('--dim_hid', default=1024, type=int)
