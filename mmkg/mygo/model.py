@@ -5,7 +5,7 @@ import numpy as np
 
 
 class MyGo(nn.Module):
-    def __init__(self, num_ent, num_rel, str_dim,
+    def __init__(self, num_ent, num_rel, str_dim, num_kernels,
                  visual_tokenizer, textual_tokenizer,
                  visual_token_index, textual_token_index,
                  visual_ent_mask, textual_ent_mask,
@@ -18,7 +18,7 @@ class MyGo(nn.Module):
         self.num_ent = num_ent
         self.num_rel = num_rel
         self.str_dim = str_dim
-        self.num_align_sampling = 8
+        self.num_align_sampling = 16
         self.num_contrastive_sampling = 512
         if visual_tokenizer == 'beit':
             visual_tokens = torch.load("tokens/visual.pth")
@@ -90,7 +90,8 @@ class MyGo(nn.Module):
                                                    dropout=dropout, batch_first=True)
         self.decoder = nn.TransformerEncoder(decoder_layer, num_layers=num_layer_dec)
 
-        self.align = AlignLoss(temp=0.5, alpha=0.5)
+        self.align_before = AlignLoss(temp=0.5, alpha=0.5, num_kernels=num_kernels)
+        self.align_after = AlignLoss(temp=0.5, alpha=0.5, num_kernels=num_kernels)
         self.contrastive = ContrastiveLoss(temp=0.5)
 
         self.num_visual_token = visual_ent_mask.shape[1]
@@ -188,9 +189,9 @@ class MyGo(nn.Module):
         ent_str_emb = ent_seq[select_ents, 1, :]
         ent_visual_emb = torch.mean(ent_seq[select_ents, 2:2 + self.num_visual_token, :], dim=1)
         ent_textual_emb = torch.mean(ent_seq[select_ents, 2 + self.num_visual_token:, :], dim=1)
-        str_visual_loss = self.align(ent_str_emb, ent_visual_emb)
-        str_textual_loss = self.align(ent_str_emb, ent_textual_emb)
-        return str_visual_loss + str_textual_loss  # 32 - 4.7  64 - 5.3
+        str_visual_loss = self.align_before(ent_str_emb, ent_visual_emb)
+        str_textual_loss = self.align_before(ent_str_emb, ent_textual_emb)
+        return str_visual_loss + str_textual_loss
 
     def align_loss_after_fusion(self, ent_seq):
         """
@@ -202,8 +203,8 @@ class MyGo(nn.Module):
         ent_str_emb = ent_seq[select_ents, 1, :]
         ent_visual_emb = torch.mean(ent_seq[select_ents, 2:2 + self.num_visual_token, :], dim=1)
         ent_textual_emb = torch.mean(ent_seq[select_ents, 2 + self.num_visual_token:, :], dim=1)
-        str_visual_loss = self.align(ent_str_emb, ent_visual_emb)
-        str_textual_loss = self.align(ent_str_emb, ent_textual_emb)
+        str_visual_loss = self.align_after(ent_str_emb, ent_visual_emb)
+        str_textual_loss = self.align_after(ent_str_emb, ent_textual_emb)
         return str_visual_loss + str_textual_loss
 
     def contrastive_loss(self, emb_ent):
