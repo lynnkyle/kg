@@ -78,13 +78,13 @@ if not args.no_write:
 """
     日志输出
 """
-logger = logging.getLogger('mygo')
+logger = logging.getLogger('afft')
 logger.setLevel(logging.INFO)
 format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 stream_handler = logging.StreamHandler(stream=sys.stdout)
 stream_handler.setFormatter(format)
 logger.addHandler(stream_handler)
-file_handler = logging.FileHandler(f'log/{args.model}/{args.data}/log.log')
+file_handler = logging.FileHandler(f'log/{args.model}/{args.data}/test.log')
 file_handler.setFormatter(format)
 logger.addHandler(file_handler)
 
@@ -121,29 +121,6 @@ lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trai
 """
 
 
-def train_one_epoch(model, optimizer):
-    model.train()
-    total_loss = 0
-    loss_fn = torch.nn.CrossEntropyLoss()
-    for batch, label in kg_loader:
-        # for batch, label in tqdm(kg_loader):
-        ent_embs, rel_embs, align_before_loss, align_after_loss = model()
-        score = model.score(batch.cuda(), ent_embs, rel_embs)
-        loss = loss_fn(score, label.cuda())
-        if args.before_align != 0:
-            loss += args.before_align * align_before_loss
-        if args.after_align != 0:
-            loss += args.after_align * align_after_loss
-        if args.contrastive != 0:
-            loss += args.contrastive * model.contrastive_loss(ent_embs)
-        total_loss += loss.item()
-        optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
-        optimizer.step()
-    return total_loss
-
-
 @torch.no_grad()
 def valid_eval_metric(valid_or_test):
     rank_list = []
@@ -156,52 +133,22 @@ def valid_eval_metric(valid_or_test):
                         rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
         head_rank = calculate_rank(head_score, h, kg.filter_dict[(-1, r, t)])
         rank_list.append(head_rank)
+        if head_rank <= 10:
+            logger.info('triple: {}-{}-{} head_rank: {}'.format(h, r, t, head_rank))
         tail_score = \
             model.score(torch.tensor([[h + kg.num_rel, r + kg.num_ent, kg.num_ent + kg.num_rel]]).cuda(), ent_embs,
                         rel_embs)[0].detach().cpu().numpy()  # [batch_size, num_entity]
         tail_rank = calculate_rank(tail_score, t, kg.filter_dict[(h, r, -1)])
         rank_list.append(tail_rank)
+        if tail_rank <= 10:
+            logger.info('triple: {}-{}-{} tail_rank: {}'.format(h, r, t, tail_rank))
     rank_list = np.array(rank_list)
     mr, mrr, hit10, hit3, hit1 = metrics(rank_list)
     return mr, mrr, hit10, hit3, hit1
 
 
 model.eval()
-res1 = valid_eval_metric(valid_or_test=kg.valid)
-print(res1)
+# res1 = valid_eval_metric(valid_or_test=kg.valid)
+# print(res1)
 res2 = valid_eval_metric(valid_or_test=kg.test)
 print(res2)
-best_mrr = res2[1] or 0
-# best_mrr = 0
-
-best_result = None
-for epoch in range(args.num_epoch):
-    loss = train_one_epoch(model, optimizer)
-    lr_scheduler.step()
-    logger.info(f'Epoch {epoch + 1}/{args.num_epoch}, Loss: {loss:.4f}')
-    if (epoch + 1) % args.valid_epoch == 0:
-        model.eval()
-        mr, mrr, hit10, hit3, hit1 = valid_eval_metric(valid_or_test=kg.valid)
-        logger.info("Entity Prediction on Valid Set")
-        logger.info(f"MR: {mr}")
-        logger.info(f"MRR: {mrr}")
-        logger.info(f"Hit10: {hit10}")
-        logger.info(f"Hit3: {hit3}")
-        logger.info(f"Hit1: {hit1}")
-        model.eval()
-        mr, mrr, hit10, hit3, hit1 = valid_eval_metric(valid_or_test=kg.test)
-        logger.info("Entity Prediction on Test Set")
-        logger.info(f"MR: {mr}")
-        logger.info(f"MRR: {mrr}")
-        logger.info(f"Hit10: {hit10}")
-        logger.info(f"Hit3: {hit3}")
-        logger.info(f"Hit1: {hit1}")
-        if mrr > best_mrr:
-            best_mrr = mrr
-            best_result = (mr, mrr, hit10, hit3, hit1)
-            torch.save({'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
-                        'scheduler': lr_scheduler.state_dict()},
-                       f'ckpt/{args.model}/{args.data}/{epoch + 1}.ckpt')
-
-logger.info(f'Best MRR: {best_mrr}, Best Result: {best_result}')
-logger.info("Done")
