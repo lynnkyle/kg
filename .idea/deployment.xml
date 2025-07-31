@@ -37,6 +37,13 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="ps@172.17.174.152:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/ps/lzy/kg" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
     </serverData>
     <option name="myAutoUpload" value="ALWAYS" />
   </component>

@@ -47,6 +47,7 @@ parser.add_argument('--device', type=str, default='cuda:1')
 parser.add_argument('--num_epoch', type=int, default=1500)
 parser.add_argument('--valid_epoch', type=int, default=1)
 parser.add_argument('--str_dim', default=256, type=int)
+parser.add_argument('--num_kernels', default=512, type=int)
 parser.add_argument('--max_vis_token', default=8, type=int)
 parser.add_argument('--max_txt_token', default=4, type=int)
 parser.add_argument("--no_write", action='store_true')
@@ -56,8 +57,8 @@ parser.add_argument('--textual_dropout', default=0, type=float)
 parser.add_argument('--lr', default=1e-3, type=float)
 # Loss的超参数
 parser.add_argument('--contrastive', default=0.01, type=float)
-parser.add_argument('--before_align', default=0.05, type=float)
-parser.add_argument('--after_align', default=0.05, type=float)
+parser.add_argument('--before_align', default=0.01, type=float)
+parser.add_argument('--after_align', default=0.01, type=float)
 # Transformer的配置
 parser.add_argument('--num_head', default=2, type=int)
 parser.add_argument('--dim_hid', default=1024, type=int)
@@ -99,10 +100,11 @@ kg_loader = torch.utils.data.DataLoader(kg, batch_size=args.batch_size, shuffle=
 """
 visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=args.max_vis_token)
 textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=args.max_txt_token)
-model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
-             textual_tokenizer='bert', visual_token_index=visual_token_index, textual_token_index=textual_token_index,
-             visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
-             dim_hid=args.dim_hid, num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
+model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, num_kernels=args.num_kernels,
+             visual_tokenizer='beit', textual_tokenizer='bert', visual_token_index=visual_token_index,
+             textual_token_index=textual_token_index, visual_ent_mask=visual_ent_mask,
+             textual_ent_mask=textual_ent_mask, num_head=args.num_head, dim_hid=args.dim_hid,
+             num_layer_enc_ent=args.num_layer_enc_ent, num_layer_enc_rel=args.num_layer_enc_rel,
              num_layer_dec=args.num_layer_dec, dropout=args.dropout, str_dropout=args.str_dropout,
              visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout, score_function='tucker').cuda()
 # 模型加载

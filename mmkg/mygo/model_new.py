@@ -42,16 +42,43 @@ class Tucker(nn.Module):
 
 
 """
+    RBF映射
+"""
+
+
+class RBFMapping(nn.Module):
+    def __init__(self, input_dim, num_kernels):
+        super().__init__()
+        self.input_dim = input_dim  # 输入的嵌入维度
+        self.num_kernels = num_kernels  # 高斯核的个数(输出的嵌入维度)
+        self.centers = nn.Parameter(torch.randn(num_kernels, input_dim))  # 高斯核中心
+        self.log_sigma = nn.Parameter(torch.zeros(num_kernels))  # 高斯核方差
+
+    def forward(self, x):
+        """
+        :param x: [batch_size, input_dim]
+        :return: [batch_size, kernel_size]
+        """
+        x_expanded = x.unsqueeze(1)  # [batch_size, 1, input_dim]
+        centers_expanded = self.centers.unsqueeze(0)  # [1, num_kernels, input_dim]
+        dist_sq = ((x_expanded - centers_expanded) ** 2).sum(dim=-1)  # [batch_size, num_kernels]
+        sigma = torch.exp(self.log_sigma).unsqueeze(0)  # [1, num_kernels]
+        rbf = torch.exp(-0.5 * dist_sq / (sigma ** 2))  # [batch_size, num_kernels]
+        return rbf
+
+
+"""
     计算嵌入的相似度
 """
 
 
 class AlignLoss(nn.Module):
-    def __init__(self, temp=0.5, alpha=0.5):
+    def __init__(self, temp=0.5, alpha=0.5, str_dim=256, num_kernels=512):
         super(AlignLoss, self).__init__()
+        self.LARGE_NUM = 1e9
         self.temp = temp
         self.alpha = alpha
-        self.LARGE_NUM = 1e9
+        self.rbf_map = RBFMapping(input_dim=str_dim, num_kernels=num_kernels)
 
     def forward(self, emb1, emb2):
         """:
@@ -63,6 +90,8 @@ class AlignLoss(nn.Module):
             计算第一次、第二次过实体编码器Transformer得到的嵌入的损失
         """
         assert emb1.size() == emb2.size()
+        emb1 = self.rbf_map(emb1)
+        emb2 = self.rbf_map(emb2)
         emb1 = F.normalize(emb1, p=2, dim=1)
         emb2 = F.normalize(emb2, p=2, dim=1)
         ent_num = emb1.shape[0]
