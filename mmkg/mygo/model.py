@@ -1,11 +1,10 @@
 import torch
 from torch import nn
-from model_new import Tucker, ContrastiveLoss, AlignLoss
-import numpy as np
+from model_new import Tucker, ContrastiveLoss, AlignLoss, GaussianNoise
 
 
 class MyGo(nn.Module):
-    def __init__(self, num_ent, num_rel, str_dim, num_kernels,
+    def __init__(self, args, num_ent, num_rel, str_dim, num_kernels,
                  visual_tokenizer, textual_tokenizer,
                  visual_token_index, textual_token_index,
                  visual_ent_mask, textual_ent_mask,
@@ -15,6 +14,7 @@ class MyGo(nn.Module):
                  visual_dropout=0.1, textual_dropout=0.1,
                  score_function=None):
         super(MyGo, self).__init__()
+        self.args = args
         self.num_ent = num_ent
         self.num_rel = num_rel
         self.str_dim = str_dim
@@ -90,8 +90,9 @@ class MyGo(nn.Module):
                                                    dropout=dropout, batch_first=True)
         self.decoder = nn.TransformerEncoder(decoder_layer, num_layers=num_layer_dec)
 
-        self.align_before = AlignLoss(temp=0.5, alpha=0.5, num_kernels=num_kernels)
-        self.align_after = AlignLoss(temp=0.5, alpha=0.5, num_kernels=num_kernels)
+        self.align_noise = GaussianNoise(log_std=0.1)
+        self.align_before = AlignLoss(temp=0.5, alpha=0.5, str_dim=args.str_dim, num_kernels=num_kernels)
+        self.align_after = AlignLoss(temp=0.5, alpha=0.5, str_dim=args.str_dim, num_kernels=num_kernels)
         self.contrastive = ContrastiveLoss(temp=0.5)
 
         self.num_visual_token = visual_ent_mask.shape[1]
@@ -125,14 +126,21 @@ class MyGo(nn.Module):
         ent_token = self.ent_token.tile(self.num_ent, 1, 1)
         rep_ent_str = self.str_drop(self.str_ln(self.ent_emb)) + self.pos_str_ent
         ent_visual_token = self.visual_token_embed(self.visual_token_index)
+        # 高斯噪声
+        if self.args.align_noise is not False:
+            ent_visual_token = self.align_noise(ent_visual_token)
+        ent_visual_token = self.align_noise(ent_visual_token)
         rep_ent_visual = self.visual_drop(self.visual_ln(self.proj_ent_visual(ent_visual_token))) + self.pos_visual_ent
         ent_textual_token = self.textual_token_embed(self.textual_token_index)
         rep_ent_textual = self.textual_drop(
             self.textual_ln(self.proj_ent_textual(ent_textual_token))) + self.pos_textual_ent
         ent_seq_before = torch.cat([ent_token, rep_ent_str, rep_ent_visual, rep_ent_textual], dim=1)
-        align_before_loss = self.align_loss_before_fusion(ent_seq_before)
         ent_seq_after = self.ent_encoder(ent_seq_before, src_key_padding_mask=self.ent_mask)
-        align_after_loss = self.align_loss_after_fusion(ent_seq_after)
+        align_before_loss = None
+        align_after_loss = None
+        if self.args.align_former is not False:
+            align_before_loss = self.align_loss_before_fusion(ent_seq_before)
+            align_after_loss = self.align_loss_after_fusion(ent_seq_after)
         ent_embs = ent_seq_after[:, 0]
         rel_embs = self.str_drop(self.str_rel_ln(self.rel_emb)).squeeze(1)
         return torch.cat([ent_embs, self.lp_token], dim=0), rel_embs, align_before_loss, align_after_loss
@@ -191,7 +199,7 @@ class MyGo(nn.Module):
         ent_textual_emb = torch.mean(ent_seq[select_ents, 2 + self.num_visual_token:, :], dim=1)
         str_visual_loss = self.align_before(ent_str_emb, ent_visual_emb)
         str_textual_loss = self.align_before(ent_str_emb, ent_textual_emb)
-        return str_visual_loss + str_textual_loss
+        return (str_visual_loss + str_textual_loss) / self.num_align_sampling
 
     def align_loss_after_fusion(self, ent_seq):
         """
@@ -205,7 +213,7 @@ class MyGo(nn.Module):
         ent_textual_emb = torch.mean(ent_seq[select_ents, 2 + self.num_visual_token:, :], dim=1)
         str_visual_loss = self.align_after(ent_str_emb, ent_visual_emb)
         str_textual_loss = self.align_after(ent_str_emb, ent_textual_emb)
-        return str_visual_loss + str_textual_loss
+        return (str_visual_loss + str_textual_loss) / self.num_align_sampling
 
     def contrastive_loss(self, emb_ent):
         ent_token = self.ent_token.tile(self.num_ent, 1, 1)

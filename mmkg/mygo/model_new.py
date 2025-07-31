@@ -68,6 +68,22 @@ class RBFMapping(nn.Module):
 
 
 """
+    图像 + 高斯噪声 
+"""
+
+
+class GaussianNoise(nn.Module):
+    def __init__(self, log_std=0.1):
+        super(GaussianNoise, self).__init__()
+        self.log_std = nn.Parameter(torch.tensor(log_std))
+
+    def forward(self, x):
+        std = torch.exp(self.log_std)
+        noise = torch.randn_like(x) * std
+        return x + noise
+
+
+"""
     计算嵌入的相似度
 """
 
