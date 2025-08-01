@@ -1,12 +1,13 @@
-from easydict import EasyDict
+import pywt
+import numpy as np
+import torch
 
-config = EasyDict()
-config.batch_size = 32
-config.learning_rate = 0.01
-config.model = EasyDict()
-config.model.name = 'ResNet50'
-config.model.depth = 50
-print(config.batch_size)
-print(config.learning_rate)
-print(config.model.name)
-print(config.model.depth)
+
+def wavelet_transform_embedding(embedding, wavelet='db1', level=3)
+    if torch.is_tensor(embedding):
+        embedding = embedding.cpu().numpy()
+    coeffs = pywt.wavedec(embedding, wavelet, level=level)
+
+    coeff_vec = np.concatenate(coeffs)
+    coeff_tensor = torch.tensor(coeff_vec, dtype=torch.float32)
+    coeff_tensor = coe
