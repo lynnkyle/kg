@@ -17,7 +17,7 @@ from torch import nn
 import logging
 
 from dataset import VTKG
-from model import MyGo
+from model_adjust import MyGo
 from merge_tokens import get_entity_visual_tokens, get_entity_textual_tokens
 from utils import calculate_rank, metrics
 
@@ -38,7 +38,7 @@ torch.backends.cudnn.benchmark = False
 """
     参数设置
 """
-torch.cuda.set_device(0)
+torch.cuda.set_device(1)
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default='DB15K')
 parser.add_argument('--batch_size', type=int, default=2048)
@@ -46,7 +46,7 @@ parser.add_argument('--model', type=str, default='AFFT')
 parser.add_argument('--device', type=str, default='cuda:1')
 parser.add_argument('--num_epoch', type=int, default=1500)
 parser.add_argument('--valid_epoch', type=int, default=1)
-parser.add_argument('--str_dim', default=256, type=int)
+parser.add_argument('--str_dim', default=512, type=int)
 parser.add_argument('--num_kernels', default=512, type=int)
 parser.add_argument('--max_vis_token', default=8, type=int)
 parser.add_argument('--max_txt_token', default=4, type=int)
@@ -56,7 +56,6 @@ parser.add_argument('--visual_dropout', default=0, type=float)
 parser.add_argument('--textual_dropout', default=0, type=float)
 parser.add_argument('--lr', default=1e-3, type=float)
 # Loss的超参数
-parser.add_argument('--align_noise', default=True, action='store_true')
 parser.add_argument('--align_former', default=True, action='store_true')
 parser.add_argument('--contrastive', default=0.01, type=float)
 parser.add_argument('--before_align', default=0.01, type=float)
@@ -111,15 +110,21 @@ model = MyGo(args, num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim,
              visual_dropout=args.visual_dropout, textual_dropout=args.textual_dropout, score_function='tucker').cuda()
 # 模型加载
 # param1 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['state_dict']
-# model.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained_epoch_293_256_align_not_loss_0.01.ckpt')['state_dict'])
+model.load_state_dict(
+    torch.load(f'ckpt/{args.model}/{args.data}/pre_trained_beforeAlign_afterAlign_512_0.01_0.01_0.01.ckpt')[
+        'state_dict'])
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 # 优化器加载
 # param2 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['optimizer']
-# optimizer.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained_epoch_293_256_align_not_loss_0.01.ckpt')['optimizer'])
+optimizer.load_state_dict(
+    torch.load(f'ckpt/{args.model}/{args.data}/pre_trained_beforeAlign_afterAlign_512_0.01_0.01_0.01.ckpt')[
+        'optimizer'])
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
 # 学习率裁剪器加载
 # param3 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler']
-# lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained_epoch_293_256_align_not_loss_0.01.ckpt')['scheduler'])
+lr_scheduler.load_state_dict(
+    torch.load(f'ckpt/{args.model}/{args.data}/pre_trained_beforeAlign_afterAlign_512_0.01_0.01_0.01.ckpt')[
+        'scheduler'])
 """
     模型训练
 """
@@ -171,11 +176,11 @@ def valid_eval_metric(valid_or_test):
     return mr, mrr, hit10, hit3, hit1
 
 
-# model.eval()
-# res1 = valid_eval_metric(valid_or_test=kg.valid)
-# print(res1)
-# res2 = valid_eval_metric(valid_or_test=kg.test)
-# print(res2)
+model.eval()
+res1 = valid_eval_metric(valid_or_test=kg.valid)
+print(res1)
+res2 = valid_eval_metric(valid_or_test=kg.test)
+print(res2)
 # best_mrr = res2[1] or 0
 best_mrr = 0
 

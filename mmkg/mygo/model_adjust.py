@@ -1,6 +1,9 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 from model_new import Tucker, ContrastiveLoss, AlignLoss, GaussianNoise
+import numpy as np
+import pywt
 
 
 class MyGo(nn.Module):
@@ -125,6 +128,9 @@ class MyGo(nn.Module):
         ent_token = self.ent_token.tile(self.num_ent, 1, 1)
         rep_ent_str = self.str_drop(self.str_ln(self.ent_emb)) + self.pos_str_ent
         ent_visual_token = self.visual_token_embed(self.visual_token_index)
+
+        ent_visual_token = self.dwt_denoise_batch(ent_visual_token)
+
         rep_ent_visual = self.visual_drop(self.visual_ln(self.proj_ent_visual(ent_visual_token))) + self.pos_visual_ent
         ent_textual_token = self.textual_token_embed(self.textual_token_index)
         rep_ent_textual = self.textual_drop(
@@ -232,3 +238,60 @@ class MyGo(nn.Module):
             loss += self.contrastive(emb_ent[select_ents], emb[select_ents])
         loss /= 4  # loss = 4.7
         return loss
+
+    def dwt_denoise_batch(self, embeddings, wavelet='db4', level=1, threshold=0.1):
+        """
+        :param embeddings: shape [B, D]的Tensor
+        :param wavelet: 小波基
+        :param level: 小波分解层数
+        :param threshold: 阈值，用于soft-threshold去噪
+        :return: 去噪后的embedding, shape [B, D]
+        """
+        embeddings_np = embeddings.detach().cpu().numpy()
+        denoised = []
+
+        for emb in embeddings_np:
+            coeffs = pywt.wavedec(emb, wavelet=wavelet, level=level)
+            # 软阈值处理
+            coeffs_denoised = [pywt.threshold(c, threshold, mode='soft') for c in coeffs]
+            # 重建
+            rec = pywt.waverec(coeffs_denoised, wavelet=wavelet)
+            # 保持维度一致
+            rec = rec[:emb.shape[0]]
+            denoised.append(rec)
+
+        denoised_up = np.stack(denoised, axis=0)
+        return torch.tensor(denoised_up, dtype=embeddings.dtype, device=embeddings.device)
+
+
+class LearnableDWTDenoise(nn.Module):
+    def __init__(self, emb_dim, kernel_size=8, threshold=0.1):
+        super().__init__()
+        self.threshold = threshold
+        self.low_filter = nn.Conv1d(1, 1, kernel_size, stride=2, padding=kernel_size // 2, bias=False)
+        self.high_filter = nn.Conv1d(1, 1, kernel_size, stride=2, padding=kernel_size // 2, bias=False)
+        self.emb_dim = emb_dim
+
+        # 可选：初始化为近似 db4 的滤波器
+        # self.low_filter.weight.data = torch.tensor([...]).view(1, 1, kernel_size)
+
+    def soft_threshold(self, x, lamb):
+        return torch.sign(x) * F.relu(torch.abs(x) - lamb)
+
+    def forward(self, x):
+        """
+        x: shape [B, D]，输入embedding
+        """
+        x = x.unsqueeze(1)  # [B, 1, D]
+        a = self.low_filter(x)  # 近似系数
+        d = self.high_filter(x)  # 细节系数
+
+        # Soft-thresholding 去噪（可替换为其他可微非线性）
+        d_denoised = self.soft_threshold(d, self.threshold)
+
+        # 重建（最简单的方式：反卷积或者上采样 + 卷积）
+        # 这里只做拼接，实际中应用上采样 + 可训练反卷积重建
+        rec = F.interpolate(a, size=self.emb_dim, mode='linear', align_corners=True) + \
+              F.interpolate(d_denoised, size=self.emb_dim, mode='linear', align_corners=True)
+
+        return rec.squeeze(1)  # [B, D]
