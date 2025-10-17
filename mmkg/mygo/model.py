@@ -4,7 +4,7 @@ from model_new import Tucker, ContrastiveLoss, AlignLoss, GaussianNoise
 
 
 class MyGo(nn.Module):
-    def __init__(self, args, num_ent, num_rel, str_dim, num_kernels,
+    def __init__(self, args, num_ent, num_rel, str_dim,
                  visual_tokenizer, textual_tokenizer,
                  visual_token_index, textual_token_index,
                  visual_ent_mask, textual_ent_mask,
@@ -90,8 +90,8 @@ class MyGo(nn.Module):
                                                    dropout=dropout, batch_first=True)
         self.decoder = nn.TransformerEncoder(decoder_layer, num_layers=num_layer_dec)
 
-        self.align_before = AlignLoss(temp=0.5, alpha=0.5, str_dim=args.str_dim, num_kernels=num_kernels)
-        self.align_after = AlignLoss(temp=0.5, alpha=0.5, str_dim=args.str_dim, num_kernels=num_kernels)
+        self.align_before = AlignLoss(temp=0.5, alpha=0.5)
+        self.align_after = AlignLoss(temp=0.5, alpha=0.5)
         self.contrastive = ContrastiveLoss(temp=0.5)
 
         self.num_visual_token = visual_ent_mask.shape[1]
@@ -133,8 +133,9 @@ class MyGo(nn.Module):
         ent_seq_after = self.ent_encoder(ent_seq_before, src_key_padding_mask=self.ent_mask)
         align_before_loss = None
         align_after_loss = None
-        if self.args.align_former is not False:
+        if self.args.before_align != 0:
             align_before_loss = self.align_loss_before_fusion(ent_seq_before)
+        if self.args.after_align != 0:
             align_after_loss = self.align_loss_after_fusion(ent_seq_after)
         ent_embs = ent_seq_after[:, 0]
         rel_embs = self.str_drop(self.str_rel_ln(self.rel_emb)).squeeze(1)

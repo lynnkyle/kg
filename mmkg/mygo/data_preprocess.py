@@ -25,7 +25,7 @@ from utils import calculate_rank, metrics, get_rank, get_topK
 @torch.no_grad()
 def valid_eval_metric(valid_or_test):
     rank_list = []
-    ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
+    ent_embs, rel_embs, _, _ = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
     for triple in valid_or_test:
         # for triple in tqdm(valid_or_test):
         h, r, t = triple
@@ -51,7 +51,7 @@ def save_numpy(args, valid_or_test, topK=20):
     topk_list = []
     topk_score_list = []
     query_embeds = []
-    ent_embs, rel_embs = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
+    ent_embs, rel_embs, _, _ = model()  # [!!!important]不要放在循环内, 导致测试时速度变慢
     for triple in valid_or_test:
         # for triple in tqdm(valid_or_test):
         h, r, t = triple
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='DB15K')
     parser.add_argument('--batch_size', type=int, default=2048)
-    parser.add_argument('--model', type=str, default='MyGo')
+    parser.add_argument('--model', type=str, default='AFFT')
     parser.add_argument('--device', type=str, default='cuda:1')
     parser.add_argument('--num_epoch', type=int, default=1500)
     parser.add_argument('--valid_epoch', type=int, default=1)
@@ -132,6 +132,11 @@ if __name__ == '__main__':
     parser.add_argument('--textual_dropout', default=0, type=float)
     parser.add_argument('--lr', default=1e-3, type=float)
     parser.add_argument('--mu', default=0.01, type=float)
+    # Loss的超参数
+    parser.add_argument('--align_former', default=True, action='store_true')
+    parser.add_argument('--contrastive', default=0.001, type=float)
+    parser.add_argument('--before_align', default=0.001, type=float)
+    parser.add_argument('--after_align', default=0.001, type=float)
     # Transformer的配置
     parser.add_argument('--num_head', default=2, type=int)
     parser.add_argument('--dim_hid', default=1024, type=int)
@@ -153,7 +158,7 @@ if __name__ == '__main__':
     """
     visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=args.max_vis_token)
     textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=args.max_txt_token)
-    model = MyGo(num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
+    model = MyGo(args, num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, visual_tokenizer='beit',
                  textual_tokenizer='bert', visual_token_index=visual_token_index,
                  textual_token_index=textual_token_index,
                  visual_ent_mask=visual_ent_mask, textual_ent_mask=textual_ent_mask, num_head=args.num_head,
@@ -164,15 +169,15 @@ if __name__ == '__main__':
                  score_function='tucker').cuda()
     # 模型加载
     # param1 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['state_dict']
-    model.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['state_dict'])
+    model.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/db15k.ckpt')['state_dict'])
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     # 优化器加载
     # param2 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['optimizer']
-    optimizer.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['optimizer'])
+    optimizer.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/db15k.ckpt')['optimizer'])
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2)
     # 学习率裁剪器加载
     # param3 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler']
-    lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler'])
+    lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/db15k.ckpt')['scheduler'])
 
     model.eval()
     valid_and_test = kg.valid + kg.test

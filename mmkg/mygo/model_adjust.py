@@ -128,9 +128,6 @@ class MyGo(nn.Module):
         ent_token = self.ent_token.tile(self.num_ent, 1, 1)
         rep_ent_str = self.str_drop(self.str_ln(self.ent_emb)) + self.pos_str_ent
         ent_visual_token = self.visual_token_embed(self.visual_token_index)
-
-        ent_visual_token = self.dwt_denoise_batch(ent_visual_token)
-
         rep_ent_visual = self.visual_drop(self.visual_ln(self.proj_ent_visual(ent_visual_token))) + self.pos_visual_ent
         ent_textual_token = self.textual_token_embed(self.textual_token_index)
         rep_ent_textual = self.textual_drop(
@@ -139,8 +136,9 @@ class MyGo(nn.Module):
         ent_seq_after = self.ent_encoder(ent_seq_before, src_key_padding_mask=self.ent_mask)
         align_before_loss = None
         align_after_loss = None
-        if self.args.align_former is not False:
+        if self.args.before_align != 0:
             align_before_loss = self.align_loss_before_fusion(ent_seq_before)
+        if self.args.after_align != 0:
             align_after_loss = self.align_loss_after_fusion(ent_seq_after)
         ent_embs = ent_seq_after[:, 0]
         rel_embs = self.str_drop(self.str_rel_ln(self.rel_emb)).squeeze(1)

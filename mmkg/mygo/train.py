@@ -24,7 +24,7 @@ from utils import calculate_rank, metrics
 """
     代码可复现
 """
-torch.cuda.set_device(1)
+torch.cuda.set_device(0)
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
@@ -38,9 +38,8 @@ torch.backends.cudnn.benchmark = False
 """
     参数设置
 """
-torch.cuda.set_device(1)
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type=str, default='MKG-W')
+parser.add_argument('--data', type=str, default='MKG-Y')
 parser.add_argument('--batch_size', type=int, default=2048)
 parser.add_argument('--model', type=str, default='AFFT')
 parser.add_argument('--device', type=str, default='cuda:0')
