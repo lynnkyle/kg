@@ -56,8 +56,8 @@ parser.add_argument('--textual_dropout', default=0.1, type=float)
 parser.add_argument('--lr', default=1e-3, type=float)
 # Loss的超参数
 parser.add_argument('--contrastive', default=0.001, type=float)
-parser.add_argument('--before_align', default=0, type=float)
-parser.add_argument('--after_align', default=0.001, type=float)
+parser.add_argument('--before_align', default=0.001, type=float)
+parser.add_argument('--after_align', default=0, type=float)
 # Transformer的配置
 parser.add_argument('--num_head', default=2, type=int)
 parser.add_argument('--dim_hid', default=1024, type=int)
@@ -71,8 +71,8 @@ args = parser.parse_args()
     文件保存
 """
 if not args.no_write:
-    os.makedirs(f'absolution/ckpt/{args.model}/{args.data}', exist_ok=True)
-    os.makedirs(f'absolution/before-align/{args.model}/{args.data}', exist_ok=True)
+    os.makedirs(f'absolution/ckpt/post-align/{args.model}/{args.data}', exist_ok=True)
+    os.makedirs(f'absolution/post-align/{args.model}/{args.data}', exist_ok=True)
 
 """
     日志输出
@@ -83,7 +83,7 @@ format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s
 stream_handler = logging.StreamHandler(stream=sys.stdout)
 stream_handler.setFormatter(format)
 logger.addHandler(stream_handler)
-file_handler = logging.FileHandler(f'absolution/before-align/{args.model}/{args.data}/log.log')
+file_handler = logging.FileHandler(f'absolution/post-align/{args.model}/{args.data}/log.log')
 file_handler.setFormatter(format)
 logger.addHandler(file_handler)
 
@@ -98,7 +98,7 @@ kg_loader = torch.utils.data.DataLoader(kg, batch_size=args.batch_size, shuffle=
 """
 visual_token_index, visual_ent_mask = get_entity_visual_tokens(args.data, max_num=args.max_vis_token)
 textual_token_index, textual_ent_mask = get_entity_textual_tokens(args.data, max_num=args.max_txt_token)
-model = MyGo(args, num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim, num_kernels=args.num_kernels,
+model = MyGo(args, num_ent=kg.num_ent, num_rel=kg.num_rel, str_dim=args.str_dim,
              visual_tokenizer='beit', textual_tokenizer='bert', visual_token_index=visual_token_index,
              textual_token_index=textual_token_index, visual_ent_mask=visual_ent_mask,
              textual_ent_mask=textual_ent_mask, num_head=args.num_head, dim_hid=args.dim_hid,
@@ -116,7 +116,7 @@ lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T
 # 学习率裁剪器加载
 # param3 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler']
 # lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained_epoch_621_align_wpt_256_0.01_0.01_0.01.ckpt')['scheduler'])
-args.num_epoch = args.num_epoch // 2
+args.num_epoch = args.num_epoch // 4
 """
     模型训练
 """
@@ -180,7 +180,7 @@ for epoch in range(args.num_epoch):
     loss = train_one_epoch(model, optimizer)
     lr_scheduler.step()
     logger.info(f'Epoch {(epoch + 1) * 4}/{args.num_epoch * 4}, Loss: {loss:.4f}')
-    if (epoch + 1) % args.valid_epoch == 0:
+    if (epoch + 1) * 4 % args.valid_epoch == 0:
         model.eval()
         mr, mrr, hit10, hit3, hit1 = valid_eval_metric(valid_or_test=kg.valid)
         logger.info("Entity Prediction on Valid Set")
@@ -202,7 +202,7 @@ for epoch in range(args.num_epoch):
             best_result = (mr, mrr, hit10, hit3, hit1)
             torch.save({'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
                         'scheduler': lr_scheduler.state_dict()},
-                       f'absolution/ckpt/{args.model}/{args.data}/{epoch + 1}.ckpt')
+                       f'absolution/ckpt/post-align/{args.model}/{args.data}/{epoch + 1}.ckpt')
 
 logger.info(f'Best MRR: {best_mrr}, Best Result: {best_result}')
 logger.info("Done")
