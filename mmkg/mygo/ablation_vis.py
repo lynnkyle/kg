@@ -24,7 +24,7 @@ from utils import calculate_rank, metrics
 """
     代码可复现
 """
-torch.cuda.set_device(0)
+torch.cuda.set_device(1)
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
@@ -42,12 +42,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default='DB15K')
 parser.add_argument('--batch_size', type=int, default=2048)
 parser.add_argument('--model', type=str, default='AFFT')
-parser.add_argument('--device', type=str, default='cuda:0')
+parser.add_argument('--device', type=str, default='cuda:1')
 parser.add_argument('--num_epoch', type=int, default=1500)
 parser.add_argument('--valid_epoch', type=int, default=1)
 parser.add_argument('--str_dim', default=256, type=int)
 parser.add_argument('--num_kernels', default=512, type=int)
-parser.add_argument('--max_vis_token', default=8, type=int)
+parser.add_argument('--max_vis_token', default=0, type=int)
 parser.add_argument('--max_txt_token', default=4, type=int)
 parser.add_argument("--no_write", action='store_true')
 parser.add_argument('--str_dropout', default=0.6, type=float)
@@ -57,7 +57,7 @@ parser.add_argument('--lr', default=1e-3, type=float)
 # Loss的超参数
 parser.add_argument('--contrastive', default=0.001, type=float)
 parser.add_argument('--before_align', default=0.001, type=float)
-parser.add_argument('--after_align', default=0, type=float)
+parser.add_argument('--after_align', default=0.001, type=float)
 # Transformer的配置
 parser.add_argument('--num_head', default=2, type=int)
 parser.add_argument('--dim_hid', default=1024, type=int)
@@ -71,8 +71,8 @@ args = parser.parse_args()
     文件保存
 """
 if not args.no_write:
-    os.makedirs(f'absolution/ckpt/post-align/{args.model}/{args.data}', exist_ok=True)
-    os.makedirs(f'absolution/post-align/{args.model}/{args.data}', exist_ok=True)
+    os.makedirs(f'absolution/vis/ckpt/{args.model}/{args.data}', exist_ok=True)
+    os.makedirs(f'absolution/vis/log/{args.model}/{args.data}', exist_ok=True)
 
 """
     日志输出
@@ -83,7 +83,7 @@ format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s
 stream_handler = logging.StreamHandler(stream=sys.stdout)
 stream_handler.setFormatter(format)
 logger.addHandler(stream_handler)
-file_handler = logging.FileHandler(f'absolution/post-align/{args.model}/{args.data}/log.log')
+file_handler = logging.FileHandler(f'absolution/vis/log/{args.model}/{args.data}/log.log')
 file_handler.setFormatter(format)
 logger.addHandler(file_handler)
 
@@ -116,7 +116,7 @@ lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T
 # 学习率裁剪器加载
 # param3 = torch.load(f'ckpt/{args.model}/{args.data}/pre_trained.ckpt')['scheduler']
 # lr_scheduler.load_state_dict(torch.load(f'ckpt/{args.model}/{args.data}/pre_trained_epoch_621_align_wpt_256_0.01_0.01_0.01.ckpt')['scheduler'])
-args.num_epoch = args.num_epoch // 4
+args.num_epoch = args.num_epoch // 2
 """
     模型训练
 """
@@ -131,9 +131,9 @@ def train_one_epoch(model, optimizer):
         ent_embs, rel_embs, align_before_loss, align_after_loss = model()
         score = model.score(batch.cuda(), ent_embs, rel_embs)
         loss = loss_fn(score, label.cuda())
-        if args.before_align != 0:
+        if args.before_align != 0 and torch.isnan(align_before_loss).item() != True:
             loss += args.before_align * align_before_loss
-        if args.after_align != 0:
+        if args.after_align != 0 and torch.isnan(align_before_loss).item() != True:
             loss += args.after_align * align_after_loss
         if args.contrastive != 0:
             loss += args.contrastive * model.contrastive_loss(ent_embs)
@@ -179,8 +179,8 @@ best_result = None
 for epoch in range(args.num_epoch):
     loss = train_one_epoch(model, optimizer)
     lr_scheduler.step()
-    logger.info(f'Epoch {(epoch + 1) * 4}/{args.num_epoch * 4}, Loss: {loss:.4f}')
-    if (epoch + 1) * 4 % args.valid_epoch == 0:
+    logger.info(f'Epoch {(epoch + 1) * 2}/{args.num_epoch * 2}, Loss: {loss:.4f}')
+    if (epoch + 1) * 2 % args.valid_epoch == 0:
         model.eval()
         mr, mrr, hit10, hit3, hit1 = valid_eval_metric(valid_or_test=kg.valid)
         logger.info("Entity Prediction on Valid Set")
@@ -202,7 +202,7 @@ for epoch in range(args.num_epoch):
             best_result = (mr, mrr, hit10, hit3, hit1)
             torch.save({'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
                         'scheduler': lr_scheduler.state_dict()},
-                       f'absolution/ckpt/post-align/{args.model}/{args.data}/{epoch + 1}.ckpt')
+                       f'absolution/vis/ckpt/{args.model}/{args.data}/{epoch + 1}.ckpt')
 
 logger.info(f'Best MRR: {best_mrr}, Best Result: {best_result}')
 logger.info("Done")

@@ -171,7 +171,7 @@ class MyGo(nn.Module):
         :return: [batch_size, num_entity]
         """
         h_seq = emb_ent[triples[:, 0] - self.num_rel].unsqueeze(1) + self.pos_head  # [batch_size, 1, str_dim]
-        r_seq = emb_ent[triples[:, 1] - self.num_ent].unsqueeze(1) + self.pos_rel  # [batch_size, 1, str_dim]
+        r_seq = emb_rel[triples[:, 1] - self.num_ent].unsqueeze(1) + self.pos_rel  # [batch_size, 1, str_dim]
         t_seq = emb_ent[triples[:, 2] - self.num_rel].unsqueeze(1) + self.pos_tail  # [batch_size, 1, str_dim]
         triple_seq = torch.cat([h_seq, r_seq, t_seq], dim=1)  # [batch_size, 3, str_dim]
         triple_out = self.decoder(triple_seq)  # [batch_size, 3, str_dim]
@@ -193,8 +193,12 @@ class MyGo(nn.Module):
         ent_str_emb = ent_seq[select_ents, 1, :]
         ent_visual_emb = torch.mean(ent_seq[select_ents, 2:2 + self.num_visual_token, :], dim=1)
         ent_textual_emb = torch.mean(ent_seq[select_ents, 2 + self.num_visual_token:, :], dim=1)
-        str_visual_loss = self.align_before(ent_str_emb, ent_visual_emb)
-        str_textual_loss = self.align_before(ent_str_emb, ent_textual_emb)
+        str_visual_loss = 0
+        str_textual_loss = 0
+        if self.args.max_vis_token != 0:
+            str_visual_loss = self.align_before(ent_str_emb, ent_visual_emb)
+        if self.args.max_txt_token != 0:
+            str_textual_loss = self.align_before(ent_str_emb, ent_textual_emb)
         return (str_visual_loss + str_textual_loss) / self.num_align_sampling
 
     def align_loss_after_fusion(self, ent_seq):
@@ -207,8 +211,12 @@ class MyGo(nn.Module):
         ent_str_emb = ent_seq[select_ents, 1, :]
         ent_visual_emb = torch.mean(ent_seq[select_ents, 2:2 + self.num_visual_token, :], dim=1)
         ent_textual_emb = torch.mean(ent_seq[select_ents, 2 + self.num_visual_token:, :], dim=1)
-        str_visual_loss = self.align_after(ent_str_emb, ent_visual_emb)
-        str_textual_loss = self.align_after(ent_str_emb, ent_textual_emb)
+        str_visual_loss = 0
+        str_textual_loss = 0
+        if self.args.max_vis_token != 0:
+            str_visual_loss = self.align_after(ent_str_emb, ent_visual_emb)
+        if self.args.max_txt_token != 0:
+            str_textual_loss = self.align_after(ent_str_emb, ent_textual_emb)
         return (str_visual_loss + str_textual_loss) / self.num_align_sampling
 
     def contrastive_loss(self, emb_ent):
@@ -229,7 +237,12 @@ class MyGo(nn.Module):
         ent_emb4 = torch.cat([torch.mean(ent_embs[:, 2 + self.num_visual_token:, :], dim=1), self.lp_token], dim=0)
         select_ents = torch.randperm(emb_ent.shape[0])[: self.num_contrastive_sampling]
         loss = 0
-        for emb in [emb_ent1, ent_emb2, ent_emb3, ent_emb4]:
+        avg_list = [emb_ent1, ent_emb2, ent_emb3, ent_emb4]
+        if self.args.max_vis_token == 0:
+            avg_list = [emb_ent1, ent_emb2, ent_emb4]
+        if self.args.max_txt_token == 0:
+            avg_list = [emb_ent1, ent_emb2, ent_emb3]
+        for emb in avg_list:
             loss += self.contrastive(emb_ent[select_ents], emb[select_ents])
         loss /= 4  # loss = 4.7
         return loss
